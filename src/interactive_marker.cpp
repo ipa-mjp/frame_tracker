@@ -163,8 +163,8 @@ bool InteractiveMarker::initialize()
     ia_server_->insert(int_marker_, boost::bind(&InteractiveMarker::markerFeedback,   this, _1));
 
     /// create menu
-    menu_handler_.insert("StartTracking", boost::bind(&InteractiveMarker::startTracking,   this, _1));
-    menu_handler_.insert("Stop", boost::bind(&InteractiveMarker::stop,   this, _1));
+    menu_handler_.insert("Start", boost::bind(&InteractiveMarker::startTracking,   this, _1));
+    menu_handler_.insert("Stop", boost::bind(&InteractiveMarker::stopTracking,   this, _1));
 
     int_marker_menu_.header.frame_id = target_frame_;
     int_marker_menu_.name = "marker_menu";
@@ -256,7 +256,7 @@ void InteractiveMarker::startTracking(const visualization_msgs::InteractiveMarke
 }
 
 
-void InteractiveMarker::stop(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
+void InteractiveMarker::stopTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
 {
     frame_tracker::GetFrameTrackingInfo srv;
     bool success = stop_client_.call(srv);

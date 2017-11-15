@@ -60,7 +60,7 @@ private:
     void updateMarker(const std::string& frame);
     void sendTransform(const ros::TimerEvent& event);
     void startTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
-    void stop(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
+    void stopTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
     void menuFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
     void markerFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
 };

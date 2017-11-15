@@ -66,6 +66,10 @@ public:
 		int checkStatus();
 
 		void publishZeroTwist();
+
+		void publishTwist(ros::Duration period, bool publish);
+
+		bool getTransform(const std::string& from, const std::string& to, tf::StampedTransform& stamped_tf);
 private:
 
 		double update_rate_;
@@ -109,6 +113,8 @@ private:
 		ros::Publisher twist_pub_;
 
 		tf::TransformListener tf_listener_;
+
+		void printTwist();
 
 };
 

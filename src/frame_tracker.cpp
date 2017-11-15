@@ -82,7 +82,48 @@ bool FrameTracker::initialization()
 
 void FrameTracker::run_node(const ros::TimerEvent& event)
 {
-;
+	ros::Duration period = event.current_real - event.last_real;
+
+	printTwist();
+	//publishTwist(period, 0);
+
+}
+
+void FrameTracker::publishTwist(ros::Duration period, bool publish)
+{
+
+	tf::StampedTransform transform_tf;
+    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
+
+    geometry_msgs::TwistStamped twist_msg;
+    twist_msg.header.frame_id = tracking_frame_;
+    twist_msg.header.stamp = ros::Time::now();
+
+    if (!success)
+    {
+        ROS_WARN("publishTwist: failed to getTransform");
+        return;
+    }
+
+    	// Calculate error
+        /*twist_msg.twist.linear.x = ((current_twist_.vel.x() - transform_tf.getOrigin().x() ) / period.toSec());
+        twist_msg.twist.linear.y = ((current_twist_.vel.y() - transform_tf.getOrigin().y() ) / period.toSec());
+        twist_msg.twist.linear.z = ((current_twist_.vel.z() - transform_tf.getOrigin().z() ) / period.toSec());
+
+        twist_msg.twist.angular.x = ((current_twist_.rot.x() - transform_tf.getRotation().x() ) / period.toSec());
+        twist_msg.twist.angular.y = ((current_twist_.rot.y() - transform_tf.getRotation().y() ) / period.toSec());
+        twist_msg.twist.angular.z = ((current_twist_.rot.z() - transform_tf.getRotation().z() ) / period.toSec());*/
+
+    	twist_msg.twist.linear.x = transform_tf.getOrigin().x();
+    	twist_msg.twist.linear.y = transform_tf.getOrigin().y();
+    	twist_msg.twist.linear.z = transform_tf.getOrigin().z();
+
+    	twist_msg.twist.angular.x = transform_tf.getRotation().x();
+    	twist_msg.twist.angular.y = ((current_twist_.rot.y() - transform_tf.getRotation().y() ) / period.toSec());
+    	twist_msg.twist.angular.z = ((current_twist_.rot.z() - transform_tf.getRotation().z() ) / period.toSec());
+
+        //cartesian_dis ...
+
 }
 
 void FrameTracker::publishZeroTwist()
@@ -143,6 +184,7 @@ bool FrameTracker::stopTrackingCallBack(frame_tracker::GetFrameTrackingInfo::Req
         ROS_INFO_STREAM(msg);
         response.success = true;
         response.message = msg;
+        tracking_ = false;
         publishZeroTwist();
 	}
 	return true;
@@ -265,4 +307,30 @@ bool FrameTracker::checkInfinitesimalTwist(const KDL::Twist current)
     }
 
     return true;
+}
+
+void FrameTracker::printTwist()
+{
+/*	ROS_INFO_STREAM("Current Twist_rot: "<< current_twist_.rot);
+	ROS_INFO_STREAM("Current Twist_rot: "<< current_twist_.rot);
+	ROS_INFO_STREAM("Target Twist_rot: "<< target_twist_.rot);
+	ROS_INFO_STREAM("Target Twist_vel: "<< target_twist_.vel);*/
+}
+
+bool FrameTracker::getTransform(const std::string& from, const std::string& to, tf::StampedTransform& stamped_tf)
+{
+    bool transform = false;
+
+    try
+    {
+        tf_listener_.waitForTransform(from, to, ros::Time(0), ros::Duration(0.2));
+        tf_listener_.lookupTransform(from, to, ros::Time(0), stamped_tf);
+        transform = true;
+    }
+    catch (tf::TransformException& ex)
+    {
+        ROS_ERROR("CobFrameTracker::getTransform: \n%s", ex.what());
+    }
+
+    return transform;
 }
