@@ -323,6 +323,57 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     }
 }
 
+/// Solver optimization problem using ACADO Toolkit
+void CobFrameTracker::solver(bool do_publish)
+{
+	const unsigned int m = J_Mat.rows();	// 6 rows, 3 with linear and 3 with angular velocity
+	const unsigned int n = J_Mat.cols();	// Number of Joints
+
+	DifferentialState x_dot("", 6, 1);		/// End-effector velocity
+	Control q_dot("", 7, 1);			/// Joint velocity
+
+	x_dot.clearStaticCounters();
+	q_dot.clearStaticCounters();
+
+	DMatrix J = J_Mat;
+
+	DifferentialEquation f;
+	f << dot(x_dot) == J * q_dot;
+
+	// Already target_twist_ is error why do we need to
+	DVector e(6), target_vel(6);
+	e.setAll(0.0), target_vel(6);
+	target_vel(0) = target_twist_.vel.x();
+	target_vel(1) = target_twist_.vel.y();
+	target_vel(2) = target_twist_.vel.z();
+	target_vel(3) = target_twist_.rot.x();
+	target_vel(4) = target_twist_.rot.y();
+	target_vel(5) = target_twist_.rot.z();
+
+	OCP ocp(0.0, 1.0, 10);
+	ocp.minimizeMayerTerm( 0.5*(target_vel - x_dot)*(target_vel - x_dot));
+	ocp.subjectTo(f);
+
+	OptimizationAlgorithm alg(ocp);
+	alg.solve();
+
+	VariablesGrid output_control;
+	alg.getControls(output_control);
+
+	DVector con_vec = output_control.getLastVector();
+
+	std::cout << con_vec << std::endl;
+
+	target_twist_.vel.x(con_vec(0)) ;
+	target_twist_.vel.y(con_vec(1)) ;
+	target_twist_.vel.z(con_vec(2)) ;
+	target_twist_.rot.x(con_vec(3)) ;
+	target_twist_.rot.y(con_vec(4)) ;
+	target_twist_.rot.z(con_vec(5)) ;
+
+}
+
+
 void CobFrameTracker::publishHoldTwist(const ros::Duration& period)
 {
     tf::StampedTransform transform_tf;
@@ -714,6 +765,20 @@ void CobFrameTracker::jointstateCallback(const sensor_msgs::JointState::ConstPtr
             ROS_ERROR("ChainFkSolverVel failed!");
         }
         ///---------------------------------------------------------------------
+        /// JAcobian calculation
+        jntToJacSolver_.reset(new KDL::ChainJntToJacSolver(chain_));
+        KDL::Jacobian j_kdl = KDL::Jacobian(dof_);
+
+        unsigned int solver_state = jntToJacSolver_->JntToJac(last_q_, j_kdl );
+
+		for (unsigned int i = 0; i < 6; ++i)
+		{
+			for (unsigned int j = 0; j < dof_; ++j)
+			{
+				J_Mat(i,j) = j_kdl(i,j);
+			}
+		}
+
     }
 }
 

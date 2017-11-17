@@ -33,6 +33,7 @@
 #include <math.h>
 #include <algorithm>
 #include <ros/ros.h>
+#include <iostream>
 
 #include <std_msgs/String.h>
 #include <std_msgs/Float64.h>
@@ -60,7 +61,14 @@
 #include <dynamic_reconfigure/server.h>
 #include <dynamic_reconfigure/Reconfigure.h>
 #include <boost/thread/mutex.hpp>
+#include <boost/shared_ptr.hpp>
 
+
+#include <acado/acado_toolkit.hpp>
+#include <acado/acado_optimal_control.hpp>
+#include <acado/bindings/acado_gnuplot/gnuplot_window.hpp>
+
+using namespace ACADO;
 
 typedef actionlib::SimpleActionServer<cob_frame_tracker::FrameTrackingAction> SAS_FrameTrackingAction_t;
 
@@ -100,6 +108,9 @@ public:
     void publishZeroTwist();
     void publishTwist(ros::Duration period, bool do_publish = true);
     void publishHoldTwist(const ros::Duration& period);
+
+    ///ACADO optimization solver
+    void solver(bool do_publish);
 
     /// Action interface
     void goalCB();
@@ -143,7 +154,9 @@ private:
     KDL::Chain chain_;
     KDL::JntArray last_q_;
     KDL::JntArray last_q_dot_;
+    Eigen::Matrix<double, 6, 7>  J_Mat;
     boost::shared_ptr<KDL::ChainFkSolverVel_recursive> jntToCartSolver_vel_;
+    boost::shared_ptr<KDL::ChainJntToJacSolver> jntToJacSolver_;
 
     tf::TransformListener tf_listener_;
 
@@ -194,6 +207,7 @@ private:
 
     unsigned int abortion_counter_;
     unsigned int max_abortions_;
+
 };
 
 #endif
