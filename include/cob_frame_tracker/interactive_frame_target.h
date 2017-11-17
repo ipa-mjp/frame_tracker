@@ -1,14 +1,38 @@
-
-// Containts implimentation client of service, interactive marker node.
-
-#ifndef INTERACTIVE_FRAME_H
-#define INTERACTIVE_FRAME_H
+/*!
+ *****************************************************************
+ * \file
+ *
+ * \note
+ *   Copyright (c) 2014 \n
+ *   Fraunhofer Institute for Manufacturing Engineering
+ *   and Automation (IPA) \n\n
+ *
+ *****************************************************************
+ *
+ * \note
+ *   Project name: care-o-bot
+ * \note
+ *   ROS stack name: cob_control
+ * \note
+ *   ROS package name: cob_frame_tracker
+ *
+ * \author
+ *   Author: Felix Messmer, email: Felix.Messmer@ipa.fraunhofer.de
+ *
+ * \date Date of creation: April, 2014
+ *
+ * \brief
+ *   This class provides an interactive_marker server for specifying a tf-frame to be tracked
+ *
+ ****************************************************************/
+#ifndef INTERACTIVE_FRAME_TARGET_H
+#define INTERACTIVE_FRAME_TARGET_H
 
 #include <string>
 #include <ros/ros.h>
 
 #include <std_srvs/Trigger.h>
-#include <frame_tracker/GetFrameTrackingInfo.h>
+#include <cob_srvs/SetString.h>
 #include <geometry_msgs/PoseStamped.h>
 
 #include <tf/transform_listener.h>
@@ -20,11 +44,11 @@
 
 
 
-class InteractiveMarker
+class InteractiveFrameTarget
 {
 public:
-    InteractiveMarker() {;}
-    ~InteractiveMarker() {;}
+    InteractiveFrameTarget() {;}
+    ~InteractiveFrameTarget() {;}
 
     bool initialize();
 
@@ -55,12 +79,14 @@ private:
     boost::mutex mutex_;
 
     ros::ServiceClient start_tracking_client_;
+    ros::ServiceClient start_lookat_client_;
     ros::ServiceClient stop_client_;
 
     void updateMarker(const std::string& frame);
     void sendTransform(const ros::TimerEvent& event);
     void startTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
-    void stopTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
+    void startLookat(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
+    void stop(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
     void menuFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
     void markerFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback);
 };

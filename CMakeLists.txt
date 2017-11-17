@@ -1,92 +1,68 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(frame_tracker)
 
-add_compile_options(-std=c++11)
-
-set(catkin_RUN_PACKAGES  
-	eigen_conversions 
-	geometry_msgs 
-	kdl_conversions 
-	kdl_parser 
-	nav_msgs 
-	roscpp 
-	#roslint 
-	sensor_msgs 
-	std_msgs 
-	tf 
-	tf_conversions 
-	trajectory_msgs 
-	urdf 
-	visualization_msgs
-	interactive_markers
-)
-
-set(catkin_BUILD_PACKAGES ${catkin_RUN_PACKAGES} cmake_modules)
-
-find_package(catkin REQUIRED COMPONENTS ${catkin_BUILD_PACKAGES})
+find_package(catkin REQUIRED COMPONENTS actionlib_msgs actionlib cob_srvs control_toolbox dynamic_reconfigure geometry_msgs interactive_markers kdl_conversions kdl_parser message_generation roscpp roslint sensor_msgs std_msgs std_srvs tf visualization_msgs)
 
 find_package(Boost REQUIRED COMPONENTS thread)
-find_package(Eigen REQUIRED)
-
-find_package(Ceres REQUIRED)
-find_package(ACADO REQUIRED)
-message("-- Found Ceres version ${CERES_VERSION}: ${CERES_INCLUDE_DIRS}")
-
-add_definitions(${EIGEN_DEFINITIONS})
 
 find_package(orocos_kdl REQUIRED)
 
-SET(ACADO_DIR /home/bfb-ws/ACADOtoolkit/)
-SET(ACADO_INCLUDE_PACKAGES ${ACADO_DIR} ${ACADO_DIR}/acado ${ACADO_DIR}/external_packages)
+### Message Generation ###
+generate_dynamic_reconfigure_options(cfg/FrameTracker.cfg)
 
-## Generate services in the 'srv' folder
-add_service_files(
-	DIRECTORY 
-		srv
-	FILES
-		GetFrameTrackingInfo.srv
+add_action_files(
+  DIRECTORY action
+  FILES FrameTracking.action
 )
 
-# Generate added messages and services with any dependencies listed here
 generate_messages(
-	DEPENDENCIES
-		actionlib_msgs
-		geometry_msgs
-		sensor_msgs
-		std_msgs
+  DEPENDENCIES
+  std_msgs
+  geometry_msgs
+  actionlib_msgs
 )
 
 catkin_package(
-  CATKIN_DEPENDS ${catkin_RUN_PACKAGES}
-  DEPENDS Boost CERES ACADO
-  INCLUDE_DIRS include ${ACADO_INCLUDE_PACKAGES}	
-  LIBRARIES frame_tracker interactive_marker
+  CATKIN_DEPENDS actionlib_msgs actionlib cob_srvs control_toolbox dynamic_reconfigure geometry_msgs interactive_markers kdl_parser message_runtime roscpp sensor_msgs std_msgs std_srvs tf visualization_msgs
+  DEPENDS Boost
+  INCLUDE_DIRS include
+  LIBRARIES cob_frame_tracker interactive_frame_target
 )
 
 ### BUILD ###
-include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN_INCLUDE_DIRS} ${orocos_kdl_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS} ${ACADO_INCLUDE_PACKAGES})
+include_directories(include ${catkin_INCLUDE_DIRS})
 
-FIND_LIBRARY(libacado libacado_toolkit_s.so ${ACADO_DIR}/build/lib)
+add_library(cob_frame_tracker src/cob_frame_tracker.cpp)
+add_dependencies(cob_frame_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(cob_frame_tracker ${catkin_LIBRARIES})
 
-add_library(frame_tracker src/frame_tracker.cpp)
-add_dependencies(frame_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(frame_tracker ${catkin_LIBRARIES} ${orocos_kdl_LIBRARIES} ${CERES_LIBRARIES} ${libacado}) 
+add_library(interactive_frame_target src/interactive_frame_target.cpp)
+add_dependencies(interactive_frame_target ${catkin_EXPORTED_TARGETS})
+target_link_libraries(interactive_frame_target ${catkin_LIBRARIES})
 
-add_library(interactive_marker src/interactive_marker.cpp)
-add_dependencies(interactive_marker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(interactive_marker ${catkin_LIBRARIES} ${orocos_kdl_LIBRARIES} ${CERES_LIBRARIES} ${libacado})
+add_executable(cob_frame_tracker_node src/cob_frame_tracker_node.cpp)
+target_link_libraries(cob_frame_tracker_node cob_frame_tracker ${catkin_LIBRARIES})
 
-add_executable(frame_tracker_node src/frame_tracker_node.cpp)
-add_dependencies(frame_tracker_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(frame_tracker_node frame_tracker ${catkin_LIBRARIES} )
+add_executable(interactive_frame_target_node src/interactive_frame_target_node.cpp)
+target_link_libraries(interactive_frame_target_node interactive_frame_target ${catkin_LIBRARIES})
 
-add_executable(interactive_marker_node src/interactive_marker_node.cpp)
-add_dependencies(interactive_marker_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(interactive_marker_node interactive_marker ${catkin_LIBRARIES} )
+add_executable(spacenav_commander src/spacenav_commander.cpp)
+add_dependencies(spacenav_commander ${catkin_EXPORTED_TARGETS})
+target_link_libraries(spacenav_commander ${catkin_LIBRARIES})
+
+roslint_cpp()
 
 ### INSTALL ###
-install(TARGETS frame_tracker interactive_marker
+install(TARGETS cob_frame_tracker cob_frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+)
+
+install(DIRECTORY include/${PROJECT_NAME}/
+ DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+)
+
+install(PROGRAMS scripts/interactive_frame_target.py
+  DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}/scripts
 )

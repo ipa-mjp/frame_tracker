@@ -1,23 +1,49 @@
-
+/*!
+ *****************************************************************
+ * \file
+ *
+ * \note
+ *   Copyright (c) 2014 \n
+ *   Fraunhofer Institute for Manufacturing Engineering
+ *   and Automation (IPA) \n\n
+ *
+ *****************************************************************
+ *
+ * \note
+ *   Project name: care-o-bot
+ * \note
+ *   ROS stack name: cob_control
+ * \note
+ *   ROS package name: cob_frame_tracker
+ *
+ * \author
+ *   Author: Felix Messmer, email: Felix.Messmer@ipa.fraunhofer.de
+ *
+ * \date Date of creation: April, 2014
+ *
+ * \brief
+ *   This class provides an interactive_marker server for specifying a tf-frame to be tracked
+ *
+ ****************************************************************/
 #include <string>
 #include <ros/ros.h>
 
-#include <frame_tracker/interactive_marker.h>
+#include <cob_frame_tracker/interactive_frame_target.h>
 
 
-bool InteractiveMarker::initialize()
+bool InteractiveFrameTarget::initialize()
 {
     ros::NodeHandle nh_tracker("frame_tracker");
 
     /// get params
-    if (nh_tracker.hasParam("/update_rate"))
-    {    nh_tracker.getParam("/update_rate", update_rate_);    }
+    if (nh_tracker.hasParam("update_rate"))
+    {    nh_tracker.getParam("update_rate", update_rate_);    }
     else
     {    update_rate_ = 50.0;    }    // hz
 
-    if (nh_.hasParam("/chain_tip_link"))
+    if (nh_.hasParam("chain_tip_link"))
     {
-        nh_.getParam("/chain_tip_link", chain_tip_link_);
+        nh_.getParam("chain_tip_link", chain_tip_link_);
     }
     else
     {
@@ -25,9 +51,9 @@ bool InteractiveMarker::initialize()
         return false;
     }
 
-    if (nh_.hasParam("/root_frame"))
+    if (nh_.hasParam("root_frame"))
     {
-        nh_.getParam("/root_frame", root_frame_);
+        nh_.getParam("root_frame", root_frame_);
     }
     else
     {
@@ -35,9 +61,9 @@ bool InteractiveMarker::initialize()
         root_frame_ = "base_link";
     }
 
-    if (nh_tracker.hasParam("/target_frame"))
+    if (nh_tracker.hasParam("target_frame"))
     {
-        nh_tracker.getParam("/target_frame", target_frame_);
+        nh_tracker.getParam("target_frame", target_frame_);
     }
     else
     {
@@ -55,16 +81,21 @@ bool InteractiveMarker::initialize()
     {    movable_rot_ = true;    }
 
     tracking_ = false;
+    lookat_ = false;
     tracking_frame_ = chain_tip_link_;
 
-    start_tracking_client_ = nh_tracker.serviceClient<frame_tracker::GetFrameTrackingInfo>("/start_tracking");
+    start_tracking_client_ = nh_tracker.serviceClient<cob_srvs::SetString>("start_tracking");
     ROS_INFO("Waiting for StartTrackingServer...");
     start_tracking_client_.waitForExistence();
 
-    stop_client_ = nh_tracker.serviceClient<frame_tracker::GetFrameTrackingInfo>("/stop_tracking");
+    start_lookat_client_ = nh_tracker.serviceClient<cob_srvs::SetString>("start_lookat");
+    ROS_INFO("Waiting for StartLookatServer...");
+    start_lookat_client_.waitForExistence();
+
+    stop_client_ = nh_tracker.serviceClient<std_srvs::Trigger>("stop");
     ROS_INFO("Waiting for StopServer...");
     stop_client_.waitForExistence();
-    ROS_INFO("InteractiveMarker: All Services available!");
+    ROS_INFO("InteractiveFrameTarget: All Services available!");
 
     bool transform_available = false;
     while (!transform_available)
@@ -160,11 +191,12 @@ bool InteractiveMarker::initialize()
     }
     control_3d.markers.push_back(box_marker);
     int_marker_.controls.push_back(control_3d);
-    ia_server_->insert(int_marker_, boost::bind(&InteractiveMarker::markerFeedback,   this, _1));
+    ia_server_->insert(int_marker_, boost::bind(&InteractiveFrameTarget::markerFeedback,   this, _1));
 
     /// create menu
-    menu_handler_.insert("Start", boost::bind(&InteractiveMarker::startTracking,   this, _1));
-    menu_handler_.insert("Stop", boost::bind(&InteractiveMarker::stopTracking,   this, _1));
+    menu_handler_.insert("StartTracking", boost::bind(&InteractiveFrameTarget::startTracking,   this, _1));
+    menu_handler_.insert("StartLookat", boost::bind(&InteractiveFrameTarget::startLookat,   this, _1));
+    menu_handler_.insert("Stop", boost::bind(&InteractiveFrameTarget::stop,   this, _1));
 
     int_marker_menu_.header.frame_id = target_frame_;
     int_marker_menu_.name = "marker_menu";
@@ -187,20 +219,20 @@ bool InteractiveMarker::initialize()
     // control_menu.description = "InteractiveMenu";
     control_menu.markers.push_back(menu_marker);
     int_marker_menu_.controls.push_back(control_menu);
-    ia_server_->insert(int_marker_menu_, boost::bind(&InteractiveMarker::menuFeedback,   this, _1));
+    ia_server_->insert(int_marker_menu_, boost::bind(&InteractiveFrameTarget::menuFeedback,   this, _1));
     menu_handler_.apply(*ia_server_, int_marker_menu_.name);
     ia_server_->applyChanges();
 
-    timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &InteractiveMarker::sendTransform,   this);
+    timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &InteractiveFrameTarget::sendTransform,   this);
     timer_.start();
 
     ROS_INFO("INTERACTIVE_MARKER...initialized!");
     return true;
 }
 
-void InteractiveMarker::sendTransform(const ros::TimerEvent& event)
+void InteractiveFrameTarget::sendTransform(const ros::TimerEvent& event)
 {
-    if (!tracking_)
+    if (!tracking_ && !lookat_)
     {    updateMarker(tracking_frame_);    }
 
     target_pose_.stamp_ = ros::Time::now();
@@ -208,7 +240,7 @@ void InteractiveMarker::sendTransform(const ros::TimerEvent& event)
     tf_broadcaster_.sendTransform(target_pose_);
 }
 
-void InteractiveMarker::updateMarker(const std::string& frame)
+void InteractiveFrameTarget::updateMarker(const std::string& frame)
 {
     bool transform_available = false;
     while (!transform_available)
@@ -237,9 +269,9 @@ void InteractiveMarker::updateMarker(const std::string& frame)
     ia_server_->applyChanges();
 }
 
-void InteractiveMarker::startTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
+void InteractiveFrameTarget::startTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
 {
-	frame_tracker::GetFrameTrackingInfo srv;
+    cob_srvs::SetString srv;
     srv.request.data = target_frame_;
     bool success = start_tracking_client_.call(srv);
 
@@ -247,7 +279,7 @@ void InteractiveMarker::startTracking(const visualization_msgs::InteractiveMarke
     {
         ROS_INFO_STREAM("StartTracking successful: " << srv.response.message);
         tracking_ = true;
-
+        lookat_ = false;
     }
     else
     {
@@ -255,17 +287,37 @@ void InteractiveMarker::startTracking(const visualization_msgs::InteractiveMarke
     }
 }
 
-
-void InteractiveMarker::stopTracking(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
+void InteractiveFrameTarget::startLookat(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
 {
-    frame_tracker::GetFrameTrackingInfo srv;
+    cob_srvs::SetString srv;
+    srv.request.data = target_frame_;
+    bool success = start_lookat_client_.call(srv);
+
+    if (success && srv.response.success)
+    {
+        ROS_INFO_STREAM("StartLookat successful: " << srv.response.message);
+
+        updateMarker("lookat_focus_frame");
+
+        tracking_ = false;
+        lookat_ = true;
+    }
+    else
+    {
+        ROS_ERROR_STREAM("StartLookat failed: " << srv.response.message);
+    }
+}
+
+void InteractiveFrameTarget::stop(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
+{
+    std_srvs::Trigger srv;
     bool success = stop_client_.call(srv);
 
     if (success && srv.response.success)
     {
         ROS_INFO_STREAM("Stop successful: " << srv.response.message);
         tracking_ = false;
-
+        lookat_ = false;
     }
     else
     {
@@ -273,12 +325,12 @@ void InteractiveMarker::stopTracking(const visualization_msgs::InteractiveMarker
     }
 }
 
-void InteractiveMarker::menuFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
+void InteractiveFrameTarget::menuFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
 {
     return;
 }
 
-void InteractiveMarker::markerFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
+void InteractiveFrameTarget::markerFeedback(const visualization_msgs::InteractiveMarkerFeedbackConstPtr& feedback)
 {
     target_pose_.stamp_ = feedback->header.stamp;
     target_pose_.frame_id_ = feedback->header.frame_id;

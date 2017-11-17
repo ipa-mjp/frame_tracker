@@ -7,27 +7,32 @@
   <maintainer email="bfb-mp@ipa.fraunhofer.de">Mayank Patel</maintainer>
   <license>IPA</license>
 
-  <buildtool_depend>catkin</buildtool_depend>
-  <build_depend>roslint</build_depend>
+  <license>LGPL</license>
 
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>message_generation</build_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <depend>actionlib_msgs</depend>
+  <depend>actionlib</depend>
   <depend>boost</depend>
-  <depend>cmake_modules</depend>
-  <depend>eigen_conversions</depend>
-  <!--depend>eigen</depend-->
+  <depend>cob_srvs</depend>
+  <depend>control_toolbox</depend>
+  <depend>dynamic_reconfigure</depend>
   <depend>geometry_msgs</depend>
+  <depend>interactive_markers</depend>
   <depend>kdl_conversions</depend>
   <depend>kdl_parser</depend>
-  <depend>nav_msgs</depend>
   <depend>orocos_kdl</depend>
-  <depend>pluginlib</depend>
   <depend>roscpp</depend>
+  <depend>roslint</depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
   <depend>tf</depend>
-  <depend>tf_conversions</depend>
-  <depend>trajectory_msgs</depend>
-  <depend>urdf</depend>
   <depend>visualization_msgs</depend>
-  <depend>interactive_markers</depend>
-  
+
+  <exec_depend>rospy</exec_depend>
+
 </package>
