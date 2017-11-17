@@ -95,7 +95,7 @@ void FrameTracker::publishTwist(ros::Duration period, bool publish)
 	tf::StampedTransform transform_tf;
     bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
 
-    geometry_msgs::TwistStamped twist_msg;
+    geometry_msgs::TwistStamped twist_msg;	// target velocity
     twist_msg.header.frame_id = tracking_frame_;
     twist_msg.header.stamp = ros::Time::now();
 
@@ -114,17 +114,24 @@ void FrameTracker::publishTwist(ros::Duration period, bool publish)
         twist_msg.twist.angular.y = ((current_twist_.rot.y() - transform_tf.getRotation().y() ) / period.toSec());
         twist_msg.twist.angular.z = ((current_twist_.rot.z() - transform_tf.getRotation().z() ) / period.toSec());*/
 
-    	twist_msg.twist.linear.x = transform_tf.getOrigin().x();
-    	twist_msg.twist.linear.y = transform_tf.getOrigin().y();
-    	twist_msg.twist.linear.z = transform_tf.getOrigin().z();
+    	twist_msg.twist.linear.x = double( transform_tf.getOrigin().x() / period.toSec() );
+    	twist_msg.twist.linear.y = double( transform_tf.getOrigin().y() / period.toSec() );
+    	twist_msg.twist.linear.z = double( transform_tf.getOrigin().z() / period.toSec() );
 
-    	twist_msg.twist.angular.x = transform_tf.getRotation().x();
-    	twist_msg.twist.angular.y = ((current_twist_.rot.y() - transform_tf.getRotation().y() ) / period.toSec());
-    	twist_msg.twist.angular.z = ((current_twist_.rot.z() - transform_tf.getRotation().z() ) / period.toSec());
+    	twist_msg.twist.angular.x = double( transform_tf.getRotation().x() / period.toSec() );
+    	twist_msg.twist.angular.y = double( transform_tf.getRotation().y() / period.toSec() );
+    	twist_msg.twist.angular.z = double( transform_tf.getRotation().z() / period.toSec() );
 
         //cartesian_dis ...
 
 }
+
+
+void FrameTracker::solver(const geometry_msgs::TwistStamped& error_vel)
+{
+
+}
+
 
 void FrameTracker::publishZeroTwist()
 {

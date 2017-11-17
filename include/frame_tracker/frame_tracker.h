@@ -70,6 +70,9 @@ public:
 		void publishTwist(ros::Duration period, bool publish);
 
 		bool getTransform(const std::string& from, const std::string& to, tf::StampedTransform& stamped_tf);
+
+		void solver(const geometry_msgs::TwistStamped& error_vel);
+
 private:
 
 		double update_rate_;
