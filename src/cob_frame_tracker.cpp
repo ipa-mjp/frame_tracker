@@ -179,6 +179,8 @@ bool CobFrameTracker::initialize()
     timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
     timer_.start();
 
+    ROS_INFO("CobFrameTracker ... initialized!");
+
     return true;
 }
 
@@ -316,6 +318,9 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     target_twist_.rot.x(twist_msg.twist.angular.x);
     target_twist_.rot.y(twist_msg.twist.angular.y);
     target_twist_.rot.z(twist_msg.twist.angular.z);
+
+    /// Store error between target and tracking frame into error variable of acado
+
 
     if (do_publish)
     {

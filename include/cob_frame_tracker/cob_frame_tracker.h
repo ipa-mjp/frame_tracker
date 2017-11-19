@@ -63,10 +63,11 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/shared_ptr.hpp>
 
-
 #include <acado/acado_toolkit.hpp>
 #include <acado/acado_optimal_control.hpp>
 #include <acado/bindings/acado_gnuplot/gnuplot_window.hpp>
+
+#include <cob_frame_tracker/kinematic_calculations.h>
 
 using namespace ACADO;
 
@@ -207,6 +208,14 @@ private:
 
     unsigned int abortion_counter_;
     unsigned int max_abortions_;
+
+    /// ACADO Variables
+    DifferentialState error; // Error, tracking and target frame
+    DifferentialState x;    // Use for end-effector velocity
+    Control q_dot;     // USe for joint velocity
+
+    ///Kinematic solver
+    boost::shared_ptr<Kinematic_calculations> kinematic_solver_;
 
 };
 
