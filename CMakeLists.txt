@@ -37,20 +37,25 @@ catkin_package(
   CATKIN_DEPENDS actionlib_msgs actionlib cob_srvs control_toolbox dynamic_reconfigure geometry_msgs interactive_markers kdl_parser message_runtime roscpp sensor_msgs std_msgs std_srvs tf visualization_msgs
   DEPENDS Boost CERES ACADO
   INCLUDE_DIRS include ${ACADO_INCLUDE_PACKAGES}
-  LIBRARIES cob_frame_tracker interactive_frame_target
+  LIBRARIES kinematic_computations cob_frame_tracker interactive_frame_target
 )
 
 ### BUILD ###
 FIND_LIBRARY(libacado libacado_toolkit_s.so ${ACADO_DIR}/build/lib)
 include_directories(include ${catkin_INCLUDE_DIRS} ${EIGEN_INCLUDE_DIRS} ${orocos_kdl_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS} ${ACADO_INCLUDE_PACKAGES})
 
+add_library(kinematic_computations src/kinematic_calculations.cpp)
+add_dependencies(kinematic_computations ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_link_libraries(kinematic_computations ${catkin_LIBRARIES} ${orocos_kdl_LIBRARIES} ${CERES_LIBRARIES} ${libacado})
+
 add_library(cob_frame_tracker src/cob_frame_tracker.cpp)
 add_dependencies(cob_frame_tracker ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
-target_link_libraries(cob_frame_tracker ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${orocos_kdl_LIBRARIES} ${libacado})
+target_link_libraries(cob_frame_tracker kinematic_computations ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${orocos_kdl_LIBRARIES} ${libacado})
 
 add_library(interactive_frame_target src/interactive_frame_target.cpp)
 add_dependencies(interactive_frame_target ${catkin_EXPORTED_TARGETS})
 target_link_libraries(interactive_frame_target ${catkin_LIBRARIES} ${libacado})
+
 
 add_executable(cob_frame_tracker_node src/cob_frame_tracker_node.cpp)
 target_link_libraries(cob_frame_tracker_node cob_frame_tracker ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${libacado})
@@ -65,7 +70,7 @@ target_link_libraries(spacenav_commander ${catkin_LIBRARIES} ${libacado})
 roslint_cpp()
 
 ### INSTALL ###
-install(TARGETS cob_frame_tracker cob_frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
+install(TARGETS kinematic_computations cob_frame_tracker cob_frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
