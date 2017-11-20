@@ -112,6 +112,7 @@ public:
 
     ///ACADO optimization solver
     void solver(bool do_publish="false");
+    bool zeroTwist(void);
 
     /// Action interface
     void goalCB();

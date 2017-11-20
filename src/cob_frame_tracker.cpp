@@ -341,11 +341,12 @@ void CobFrameTracker::solver(bool do_publish)
 
     // weight matrix, book modelling and control => higher eigen value, error fast converge to zero
     DMatrix K = 2.0 * Eigen::MatrixXd::Identity(6,6);
+    ROS_DEBUG_STREAM(" Weight Matrix ... \n "<< K );
     //DMatrix k = eye<double>(m);
 
-    DifferentialState error("cost",m,1);            // Error, tracking and target frame
-    DifferentialState x("state",m,1);               // Use for end-effector velocity
-    Control q_dot("control",n,1);                   // Use for joint velocity
+    DifferentialState error("",m,1);            // Error, tracking and target frame
+    DifferentialState x("",m,1);               // Use for end-effector velocity
+    Control q_dot("",n,1);                   // Use for joint velocity
     
     x.clearStaticCounters();
     error.clearStaticCounters();
@@ -356,24 +357,23 @@ void CobFrameTracker::solver(bool do_publish)
     objective_fun << 0.5 * res_error.transpose() * K * res_error;
 */
 
-    // Initialize joint velocity, start from zero
-//    DVector control_init(n);
-//    control_init.setAll(0.0);
+
+    DifferentialEquation f;             // Define differential equation
+    f << dot(x) == jac_mat * q_dot; 
 
     // Initialize error, at end to zero
     DVector error_at_end_init(m);
     error_at_end_init.setAll(0.0);
 
-    DifferentialEquation f;             // Define differential equation
-    f << dot(x) == jac_mat * q_dot; 
+    ROS_WARN("Hello");
 
     // Define ocp problem
     OCP ocp_problem(0.0, 1.0, 10);
-    ocp_problem.minimizeMayerTerm(0.5 * error.transpose() * K * error);
+    ocp_problem.minimizeMayerTerm(0.5 * (error.transpose() * K * error) );
     ocp_problem.subjectTo(f);
 //    ocp_problem.subjectTo(AT_START, q_dot == control_init);
     //ocp_problem.subjectTo(AT_END, error == error_at_end_init);
-
+    ROS_WARN("Hello1");
     // joint limits
    /* ocp_problem.subjectTo(-3.14 <= q_dot(0) <= 3.14);
     ocp_problem.subjectTo(-3.14 <= q_dot(1) <= 3.14);
@@ -386,14 +386,7 @@ void CobFrameTracker::solver(bool do_publish)
     // solve ocp problem
     OptimizationAlgorithm ocp_solver(ocp_problem);
 
-    // set solver option
-    ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
-    ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
-    ocp_solver.set(DISCRETIZATION_TYPE, SINGLE_SHOOTING);
-    ocp_solver.set(KKT_TOLERANCE, 1.000000E-04);
-    ocp_solver.set(MAX_NUM_ITERATIONS, 1000);
-
-    // initialize differential state
+        // initialize differential state
     //VariablesGrid error_init(m,1);
     DVector error_init(m);
     error_init.setAll(0.0);
@@ -404,7 +397,8 @@ void CobFrameTracker::solver(bool do_publish)
     error_init(3) = target_twist_.rot.x();
     error_init(4) = target_twist_.rot.y();
     error_init(5) = target_twist_.rot.z();
-
+    
+    ROS_WARN_STREAM("Error vector \n"<< error_init);
     // initialize control state
 /*    VariablesGrid control_init(n,1);
     control_init.setAll(0.0);
@@ -414,21 +408,32 @@ void CobFrameTracker::solver(bool do_publish)
     DVector control_init(n);
     control_init.setAll(0.0);
     control_init = jac_mat.transpose() * K * error_init; 
+    ROS_WARN_STREAM("Control init vector \n"<< control_init);
+
+    // initialize states, control => solve optimal control problem
+    //ocp_solver.initializeDifferentialStates(error_init);
+    ocp_solver.initializeControls( control_init );
+    
+    // set solver option
+    //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
+    //ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
+    ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
+    ocp_solver.set(KKT_TOLERANCE, 1.000000E-04);
+    ocp_solver.set(MAX_NUM_ITERATIONS, 1000);
+    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
+    ROS_WARN("Hello3");
 
     //plot 
-    GnuplotWindow control_window, error_state_window, x_state_window;
+    /*GnuplotWindow control_window, error_state_window, x_state_window;
     control_window.addSubplot(q_dot, "Controlled joint velocity");
     error_state_window.addSubplot(error, "Controlled Error state");
     x_state_window.addSubplot(x, "Controlled End effector position");
     ocp_solver << error_state_window;
     ocp_solver << x_state_window;
-    ocp_solver << control_window;
+    ocp_solver << control_window;*/
 
-    // initialize states, control => solve optimal control problem
-    ocp_solver.initializeDifferentialStates(error_init);
-    ocp_solver.initializeControls( control_init );
     ocp_solver.solve();
-
+    ROS_WARN("Hello6");
     // Plot controls and states
     VariablesGrid control_ouput, state_output;
     ocp_solver.getControls(control_ouput);
@@ -441,6 +446,7 @@ void CobFrameTracker::solver(bool do_publish)
     state_plot_window.addSubplot(state_output, "Controlled End-effector position");
     state_plot_window.plot();
 
+    ROS_WARN("Hello7");
     ROS_WARN("OCP Solved!!");
 }
 
