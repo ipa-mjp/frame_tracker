@@ -320,7 +320,7 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     target_twist_.rot.z(twist_msg.twist.angular.z);
 
     /// Store error between target and tracking frame into error variable of acado
-
+    solver();
 
     if (do_publish)
     {
@@ -328,6 +328,125 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     }
 }
 
+void CobFrameTracker::solver(bool do_publish)
+{
+
+    ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
+
+    // get jacobian matrix
+    DMatrix jac_mat = J_Mat;
+    
+    const unsigned int m = jac_mat.rows();  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity 
+    const unsigned int n = jac_mat.cols();  // columns of jacobian matrix, number of joints(DOF) 
+
+    // weight matrix, book modelling and control => higher eigen value, error fast converge to zero
+    DMatrix K = 2.0 * Eigen::MatrixXd::Identity(6,6);
+    //DMatrix k = eye<double>(m);
+
+    DifferentialState error("cost",m,1);            // Error, tracking and target frame
+    DifferentialState x("state",m,1);               // Use for end-effector velocity
+    Control q_dot("control",n,1);                   // Use for joint velocity
+    
+    x.clearStaticCounters();
+    error.clearStaticCounters();
+    q_dot.clearStaticCounters();
+
+/*
+    Function objective_fun;
+    objective_fun << 0.5 * res_error.transpose() * K * res_error;
+*/
+
+    // Initialize joint velocity, start from zero
+//    DVector control_init(n);
+//    control_init.setAll(0.0);
+
+    // Initialize error, at end to zero
+    DVector error_at_end_init(m);
+    error_at_end_init.setAll(0.0);
+
+    DifferentialEquation f;             // Define differential equation
+    f << dot(x) == jac_mat * q_dot; 
+
+    // Define ocp problem
+    OCP ocp_problem(0.0, 1.0, 10);
+    ocp_problem.minimizeMayerTerm(0.5 * error.transpose() * K * error);
+    ocp_problem.subjectTo(f);
+//    ocp_problem.subjectTo(AT_START, q_dot == control_init);
+    //ocp_problem.subjectTo(AT_END, error == error_at_end_init);
+
+    // joint limits
+   /* ocp_problem.subjectTo(-3.14 <= q_dot(0) <= 3.14);
+    ocp_problem.subjectTo(-3.14 <= q_dot(1) <= 3.14);
+    ocp_problem.subjectTo(-3.14 <= q_dot(2) <= 3.14);
+    ocp_problem.subjectTo(-3.14 <= q_dot(3) <= 3.14);
+    ocp_problem.subjectTo(-3.14 <= q_dot(4) <= 3.14);
+    ocp_problem.subjectTo(-3.14 <= q_dot(5) <= 3.14);
+    ocp_problem.subjectTo(-3.14 <= q_dot(6) <= 3.14);
+    */
+    // solve ocp problem
+    OptimizationAlgorithm ocp_solver(ocp_problem);
+
+    // set solver option
+    ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
+    ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
+    ocp_solver.set(DISCRETIZATION_TYPE, SINGLE_SHOOTING);
+    ocp_solver.set(KKT_TOLERANCE, 1.000000E-04);
+    ocp_solver.set(MAX_NUM_ITERATIONS, 1000);
+
+    // initialize differential state
+    //VariablesGrid error_init(m,1);
+    DVector error_init(m);
+    error_init.setAll(0.0);
+    error_init(0) = target_twist_.vel.x();
+    error_init(1) = target_twist_.vel.y();
+    error_init(2) = target_twist_.vel.z();
+
+    error_init(3) = target_twist_.rot.x();
+    error_init(4) = target_twist_.rot.y();
+    error_init(5) = target_twist_.rot.z();
+
+    // initialize control state
+/*    VariablesGrid control_init(n,1);
+    control_init.setAll(0.0);
+    control_init = jac_mat.transpose() * K;
+    control_init *= error_init;
+*/
+    DVector control_init(n);
+    control_init.setAll(0.0);
+    control_init = jac_mat.transpose() * K * error_init; 
+
+    //plot 
+    GnuplotWindow control_window, error_state_window, x_state_window;
+    control_window.addSubplot(q_dot, "Controlled joint velocity");
+    error_state_window.addSubplot(error, "Controlled Error state");
+    x_state_window.addSubplot(x, "Controlled End effector position");
+    ocp_solver << error_state_window;
+    ocp_solver << x_state_window;
+    ocp_solver << control_window;
+
+    // initialize states, control => solve optimal control problem
+    ocp_solver.initializeDifferentialStates(error_init);
+    ocp_solver.initializeControls( control_init );
+    ocp_solver.solve();
+
+    // Plot controls and states
+    VariablesGrid control_ouput, state_output;
+    ocp_solver.getControls(control_ouput);
+    ocp_solver.getDifferentialStates(state_output);
+
+    GnuplotWindow control_plot_window, state_plot_window;
+    control_plot_window.addSubplot(control_ouput, "Controlled joint velocity");
+    control_plot_window.plot();
+
+    state_plot_window.addSubplot(state_output, "Controlled End-effector position");
+    state_plot_window.plot();
+
+    ROS_WARN("OCP Solved!!");
+}
+
+
+
+/*
 /// Solver optimization problem using ACADO Toolkit
 void CobFrameTracker::solver(bool do_publish)
 {
@@ -377,7 +496,7 @@ void CobFrameTracker::solver(bool do_publish)
 	target_twist_.rot.z(con_vec(5)) ;
 
 }
-
+*/
 
 void CobFrameTracker::publishHoldTwist(const ros::Duration& period)
 {

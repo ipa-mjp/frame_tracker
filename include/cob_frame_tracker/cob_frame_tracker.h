@@ -111,7 +111,7 @@ public:
     void publishHoldTwist(const ros::Duration& period);
 
     ///ACADO optimization solver
-    void solver(bool do_publish);
+    void solver(bool do_publish="false");
 
     /// Action interface
     void goalCB();
@@ -210,9 +210,9 @@ private:
     unsigned int max_abortions_;
 
     /// ACADO Variables
-    DifferentialState error; // Error, tracking and target frame
-    DifferentialState x;    // Use for end-effector velocity
-    Control q_dot;     // USe for joint velocity
+    //DifferentialState error; // Error, tracking and target frame
+    //DifferentialState x;    // Use for end-effector velocity
+    //Control q_dot;     // USe for joint velocity
 
     ///Kinematic solver
     boost::shared_ptr<Kinematic_calculations> kinematic_solver_;
