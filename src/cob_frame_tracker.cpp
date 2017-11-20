@@ -137,7 +137,7 @@ bool CobFrameTracker::initialize()
     tracking_goal_ = false;
     lookat_ = false;
     tracking_frame_ = chain_tip_link_;
-    target_frame_ = chain_tip_link_;
+    target_frame_ = "arm_7_target";
     lookat_focus_frame_ = "lookat_focus_frame";
 
     // ABORTION CRITERIA:
@@ -320,7 +320,7 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     target_twist_.rot.z(twist_msg.twist.angular.z);
 
     /// Store error between target and tracking frame into error variable of acado
-    solver();
+    solver(transform_tf);
 
     if (do_publish)
     {
@@ -328,181 +328,85 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     }
 }
 
-void CobFrameTracker::solver(bool do_publish)
+void CobFrameTracker::solver( tf::StampedTransform transform_tf)
 {
 
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
 
-    // get jacobian matrix
+    // Get position error vector
+    bool success = this->getTransform("arm_7_link", "arm_7_target", transform_tf);
+
+    // get Jacobian matrix
     DMatrix jac_mat = J_Mat;
     
     const unsigned int m = jac_mat.rows();  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity 
     const unsigned int n = jac_mat.cols();  // columns of jacobian matrix, number of joints(DOF) 
 
-    // weight matrix, book modelling and control => higher eigen value, error fast converge to zero
-    DMatrix K = 2.0 * Eigen::MatrixXd::Identity(6,6);
-    ROS_DEBUG_STREAM(" Weight Matrix ... \n "<< K );
-    //DMatrix k = eye<double>(m);
+    DifferentialState x("",m,1);                // Use for end-effector velocity
+    Control q_dot("",n,1);                      // Use for joint velocity
+    Parameter pose_error("",7,1);
 
-    DifferentialState error("",m,1);            // Error, tracking and target frame
-    DifferentialState x("",m,1);               // Use for end-effector velocity
-    Control q_dot("",n,1);                   // Use for joint velocity
-    
     x.clearStaticCounters();
-    error.clearStaticCounters();
+    pose_error.clearStaticCounters();
     q_dot.clearStaticCounters();
 
-/*
-    Function objective_fun;
-    objective_fun << 0.5 * res_error.transpose() * K * res_error;
-*/
+    // initialize pose error
+    DVector pose_error_init(7);
+    pose_error_init.setAll(0.0);
+    pose_error_init(0) = transform_tf.getOrigin().x();
+    pose_error_init(1) = transform_tf.getOrigin().y();
+    pose_error_init(2) = transform_tf.getOrigin().z();
 
+    pose_error_init(3) = transform_tf.getRotation().x();
+    pose_error_init(4) = transform_tf.getRotation().y();
+    pose_error_init(5) = transform_tf.getRotation().z();
+    pose_error_init(6) = transform_tf.getRotation().w();
+
+    DVector control_init(n);
+    control_init.setAll(0.0);
+    //control_init = last_q_dot_.data;
+    //ROS_WARN_STREAM("Joint velocity: "<< control_init);
 
     DifferentialEquation f;             // Define differential equation
     f << dot(x) == jac_mat * q_dot; 
 
-    // Initialize error, at end to zero
-    DVector error_at_end_init(m);
-    error_at_end_init.setAll(0.0);
-
-    ROS_WARN("Hello");
-
     // Define ocp problem
     OCP ocp_problem(0.0, 1.0, 10);
-    ocp_problem.minimizeMayerTerm(0.5 * (error.transpose() * K * error) );
+    ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
     ocp_problem.subjectTo(f);
-//    ocp_problem.subjectTo(AT_START, q_dot == control_init);
-    //ocp_problem.subjectTo(AT_END, error == error_at_end_init);
-    ROS_WARN("Hello1");
-    // joint limits
-   /* ocp_problem.subjectTo(-3.14 <= q_dot(0) <= 3.14);
-    ocp_problem.subjectTo(-3.14 <= q_dot(1) <= 3.14);
-    ocp_problem.subjectTo(-3.14 <= q_dot(2) <= 3.14);
-    ocp_problem.subjectTo(-3.14 <= q_dot(3) <= 3.14);
-    ocp_problem.subjectTo(-3.14 <= q_dot(4) <= 3.14);
-    ocp_problem.subjectTo(-3.14 <= q_dot(5) <= 3.14);
-    ocp_problem.subjectTo(-3.14 <= q_dot(6) <= 3.14);
-    */
-    // solve ocp problem
+
     OptimizationAlgorithm ocp_solver(ocp_problem);
-
-        // initialize differential state
-    //VariablesGrid error_init(m,1);
-    DVector error_init(m);
-    error_init.setAll(0.0);
-    error_init(0) = target_twist_.vel.x();
-    error_init(1) = target_twist_.vel.y();
-    error_init(2) = target_twist_.vel.z();
-
-    error_init(3) = target_twist_.rot.x();
-    error_init(4) = target_twist_.rot.y();
-    error_init(5) = target_twist_.rot.z();
     
-    ROS_WARN_STREAM("Error vector \n"<< error_init);
-    // initialize control state
-/*    VariablesGrid control_init(n,1);
-    control_init.setAll(0.0);
-    control_init = jac_mat.transpose() * K;
-    control_init *= error_init;
-*/
-    DVector control_init(n);
-    control_init.setAll(0.0);
-    control_init = jac_mat.transpose() * K * error_init; 
-    ROS_WARN_STREAM("Control init vector \n"<< control_init);
+    ocp_solver.initializeParameters(pose_error_init);
+    //ocp_solver.initializeControls(control_init);
 
-    // initialize states, control => solve optimal control problem
-    //ocp_solver.initializeDifferentialStates(error_init);
-    ocp_solver.initializeControls( control_init );
-    
     // set solver option
-    //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
-    //ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
+    ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
+    ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
     ocp_solver.set(KKT_TOLERANCE, 1.000000E-04);
-    ocp_solver.set(MAX_NUM_ITERATIONS, 1000);
-    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
-    ROS_WARN("Hello3");
-
-    //plot 
-    /*GnuplotWindow control_window, error_state_window, x_state_window;
-    control_window.addSubplot(q_dot, "Controlled joint velocity");
-    error_state_window.addSubplot(error, "Controlled Error state");
-    x_state_window.addSubplot(x, "Controlled End effector position");
-    ocp_solver << error_state_window;
-    ocp_solver << x_state_window;
-    ocp_solver << control_window;*/
+    ocp_solver.set(MAX_NUM_ITERATIONS, 10);
+    //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
 
     ocp_solver.solve();
-    ROS_WARN("Hello6");
+
     // Plot controls and states
     VariablesGrid control_ouput, state_output;
-    ocp_solver.getControls(control_ouput);
+    //ocp_solver.getDifferentialStates("/home/bfb-ws/mpc_ws/src/frame_tracker/config/states.txt");
+    //ocp_solver.getControls("/home/bfb-ws/mpc_ws/src/frame_tracker/config/control.txt");
     ocp_solver.getDifferentialStates(state_output);
+    state_output.print();
 
+    /*
     GnuplotWindow control_plot_window, state_plot_window;
     control_plot_window.addSubplot(control_ouput, "Controlled joint velocity");
     control_plot_window.plot();
 
     state_plot_window.addSubplot(state_output, "Controlled End-effector position");
-    state_plot_window.plot();
-
-    ROS_WARN("Hello7");
+    state_plot_window.plot();*/
     ROS_WARN("OCP Solved!!");
 }
 
-
-
-/*
-/// Solver optimization problem using ACADO Toolkit
-void CobFrameTracker::solver(bool do_publish)
-{
-	const unsigned int m = J_Mat.rows();	// 6 rows, 3 with linear and 3 with angular velocity
-	const unsigned int n = J_Mat.cols();	// Number of Joints
-
-	DifferentialState x_dot("", 6, 1);		/// End-effector velocity
-	Control q_dot("", 7, 1);			/// Joint velocity
-
-	x_dot.clearStaticCounters();
-	q_dot.clearStaticCounters();
-
-	DMatrix J = J_Mat;
-
-	DifferentialEquation f;
-	f << dot(x_dot) == J * q_dot;
-
-	// Already target_twist_ is error why do we need to
-	DVector e(6), target_vel(6);
-	e.setAll(0.0), target_vel(6);
-	target_vel(0) = target_twist_.vel.x();
-	target_vel(1) = target_twist_.vel.y();
-	target_vel(2) = target_twist_.vel.z();
-	target_vel(3) = target_twist_.rot.x();
-	target_vel(4) = target_twist_.rot.y();
-	target_vel(5) = target_twist_.rot.z();
-
-	OCP ocp(0.0, 1.0, 10);
-	ocp.minimizeMayerTerm( 0.5*(target_vel - x_dot)*(target_vel - x_dot));
-	ocp.subjectTo(f);
-
-	OptimizationAlgorithm alg(ocp);
-	alg.solve();
-
-	VariablesGrid output_control;
-	alg.getControls(output_control);
-
-	DVector con_vec = output_control.getLastVector();
-
-	std::cout << con_vec << std::endl;
-
-	target_twist_.vel.x(con_vec(0)) ;
-	target_twist_.vel.y(con_vec(1)) ;
-	target_twist_.vel.z(con_vec(2)) ;
-	target_twist_.rot.x(con_vec(3)) ;
-	target_twist_.rot.y(con_vec(4)) ;
-	target_twist_.rot.z(con_vec(5)) ;
-
-}
-*/
 
 void CobFrameTracker::publishHoldTwist(const ros::Duration& period)
 {

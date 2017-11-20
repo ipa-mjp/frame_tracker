@@ -111,7 +111,7 @@ public:
     void publishHoldTwist(const ros::Duration& period);
 
     ///ACADO optimization solver
-    void solver(bool do_publish="false");
+    void solver(tf::StampedTransform transform_tf);
     bool zeroTwist(void);
 
     /// Action interface
@@ -217,7 +217,6 @@ private:
 
     ///Kinematic solver
     boost::shared_ptr<Kinematic_calculations> kinematic_solver_;
-
 };
 
 #endif
