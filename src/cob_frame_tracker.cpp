@@ -264,11 +264,7 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         return;
     }
 
-    /// Store error between target and tracking frame into error variable of acado
-    if (cart_distance_ >= 0.05)
-    	solver(transform_tf, twist_msg.twist);
 
-    /*
     if (movable_trans_)
     {
         twist_msg.twist.linear.x = pid_controller_trans_x_.computeCommand(transform_tf.getOrigin().x(), period);
@@ -285,11 +281,27 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         twist_msg.twist.angular.y = pid_controller_rot_y_.computeCommand(transform_tf.getRotation().y(), period);
         twist_msg.twist.angular.z = pid_controller_rot_z_.computeCommand(transform_tf.getRotation().z(), period);
     }
-*/
+
     ROS_WARN_STREAM("Twist_msg: "<< twist_msg.twist);
 
     // eukl distance
     cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
+
+    /// Store error between target and tracking frame into error variable of acado
+    if (cart_distance_ >= 0.05)
+    {
+        if (movable_trans_)
+        {
+        	solver(transform_tf, twist_msg.twist);
+        	//twist_msg.twist.angular.x = 0;    	twist_msg.twist.angular.y = 0;    	twist_msg.twist.angular.z = 0;
+        }
+
+        if (movable_rot_)
+        {
+        	solver(transform_tf, twist_msg.twist);
+        	//twist_msg.twist.linear.x = 0;    	twist_msg.twist.linear.y = 0;    	twist_msg.twist.linear.z = 0;
+        }
+    }
 
     // rot distance
     // // TODO: change to cartesian rot
@@ -364,8 +376,9 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
 
     // Define ocp problem
     OCP ocp_problem(0.0, 1.0, 10);
-    ocp_problem.minimizeMayerTerm( 1.0 * (pose_error.transpose() * pose_error) );
+    ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
     ocp_problem.subjectTo(f);
+    ocp_problem.subjectTo( -0.08 <= pose_error <= 0.08);	//error bound
 
     OptimizationAlgorithm ocp_solver(ocp_problem);
     
@@ -377,7 +390,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
     ocp_solver.set(KKT_TOLERANCE, 1.000000E-04);
-    ocp_solver.set(MAX_NUM_ITERATIONS, 10);
+    ocp_solver.set(MAX_NUM_ITERATIONS, 1000);
     //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
 
     ocp_solver.solve();
