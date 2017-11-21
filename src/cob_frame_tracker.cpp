@@ -281,35 +281,16 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         twist_msg.twist.angular.z = pid_controller_rot_z_.computeCommand(transform_tf.getRotation().z(), period);
     }
 
-    /// debug only
-    /**
-    if (std::fabs(transform_tf.getOrigin().x()) >= max_vel_lin_)
-        ROS_WARN("Twist.linear.x: %f exceeds limit %f", transform_tf.getOrigin().x(), max_vel_lin_);
-    if (std::fabs(transform_tf.getOrigin().y()) >= max_vel_lin_)
-        ROS_WARN("Twist.linear.y: %f exceeds limit %f", transform_tf.getOrigin().y(), max_vel_lin_);
-    if (std::fabs(transform_tf.getOrigin().z()) >= max_vel_lin_)
-        ROS_WARN("Twist.linear.z: %f exceeds limit %f", transform_tf.getOrigin().z(), max_vel_lin_);
-    if (std::fabs(transform_tf.getOrigin().x()) >= max_vel_rot_)
-        ROS_WARN("Twist.angular.x: %f exceeds limit %f", transform_tf.getOrigin().x(), max_vel_rot_);
-    if (std::fabs(transform_tf.getOrigin().y()) >= max_vel_rot_)
-        ROS_WARN("Twist.angular.y: %f exceeds limit %f", transform_tf.getOrigin().y(), max_vel_rot_);
-    if (std::fabs(transform_tf.getOrigin().z()) >= max_vel_rot_)
-        ROS_WARN("Twist.angular.z: %f exceeds limit %f", transform_tf.getOrigin().z(), max_vel_rot_);
-
-    twist_msg.twist.linear.x = copysign(std::min(max_vel_lin_, std::fabs(transform_tf.getOrigin().x())),transform_tf.getOrigin().x());
-    twist_msg.twist.linear.y = copysign(std::min(max_vel_lin_, std::fabs(transform_tf.getOrigin().y())),transform_tf.getOrigin().y());
-    twist_msg.twist.linear.z = copysign(std::min(max_vel_lin_, std::fabs(transform_tf.getOrigin().z())),transform_tf.getOrigin().z());
-    twist_msg.twist.angular.x = copysign(std::min(max_vel_rot_, std::fabs(transform_tf.getRotation().x())),transform_tf.getRotation().x());
-    twist_msg.twist.angular.y = copysign(std::min(max_vel_rot_, std::fabs(transform_tf.getRotation().y())),transform_tf.getRotation().y());
-    twist_msg.twist.angular.z = copysign(std::min(max_vel_rot_, std::fabs(transform_tf.getRotation().z())),transform_tf.getRotation().z());
-    **/
-
     // eukl distance
     cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
 
     // rot distance
     // // TODO: change to cartesian rot
     // rot_distance_ = 2* acos(transform_msg.transform.rotation.w);
+
+    /// Store error between target and tracking frame into error variable of acado
+    if (cart_distance_ != 0)
+    	solver(transform_tf, twist_msg.twist);
 
     // get target_twist
     target_twist_.vel.x(twist_msg.twist.linear.x);
@@ -319,16 +300,13 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     target_twist_.rot.y(twist_msg.twist.angular.y);
     target_twist_.rot.z(twist_msg.twist.angular.z);
 
-    /// Store error between target and tracking frame into error variable of acado
-    solver(transform_tf);
-
     if (do_publish)
     {
         twist_pub_.publish(twist_msg);
     }
 }
 
-void CobFrameTracker::solver( tf::StampedTransform transform_tf)
+void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::Twist controlled_twist)
 {
 
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
@@ -364,7 +342,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf)
 
     DVector control_init(n);
     control_init.setAll(0.0);
-    //control_init = last_q_dot_.data;
+    control_init = last_q_dot_.data;
     //ROS_WARN_STREAM("Joint velocity: "<< control_init);
 
     DifferentialEquation f;             // Define differential equation
@@ -378,7 +356,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf)
     OptimizationAlgorithm ocp_solver(ocp_problem);
     
     ocp_solver.initializeParameters(pose_error_init);
-    //ocp_solver.initializeControls(control_init);
+    ocp_solver.initializeControls(control_init);
 
     // set solver option
     ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
@@ -391,19 +369,30 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf)
     ocp_solver.solve();
 
     // Plot controls and states
-    VariablesGrid control_ouput, state_output;
-    //ocp_solver.getDifferentialStates("/home/bfb-ws/mpc_ws/src/frame_tracker/config/states.txt");
-    //ocp_solver.getControls("/home/bfb-ws/mpc_ws/src/frame_tracker/config/control.txt");
+    VariablesGrid control_ouput, state_output, error_param_output, cost_func_value;
     ocp_solver.getDifferentialStates(state_output);
-    state_output.print();
+//    ocp_solver.getDifferentialStates("/home/bfb-ws/mpc_ws/src/frame_tracker/result/states.txt");
+//    ocp_solver.getControls(control_ouput);
+//    ocp_solver.getParameters(error_param_output);
+    //state_output.print();
+    //control_ouput.print();
+    //ROS_WARN_STREAM(" Objective function value: "<< ocp_solver.getObjectiveValue() );
+    //error_param_output.getLastVector().print();
 
-    /*
-    GnuplotWindow control_plot_window, state_plot_window;
-    control_plot_window.addSubplot(control_ouput, "Controlled joint velocity");
-    control_plot_window.plot();
+    DVector controled_joint_vel = control_ouput.getLastVector();
+    DVector controlled_end_effector_vel = state_output.getLastVector();
+    //ROS_WARN_STREAM("Controlled twist: \n " << controled_joint_vel);
+//    ROS_WARN_STREAM("Controlled end-effector velocity: \n " << controlled_end_effector_vel);
 
-    state_plot_window.addSubplot(state_output, "Controlled End-effector position");
-    state_plot_window.plot();*/
+    // Convert DVector to geometry_msgs::TwistSt
+    controlled_twist.linear.x = controlled_end_effector_vel(0);
+    controlled_twist.linear.y = controlled_end_effector_vel(1);
+    controlled_twist.linear.z = controlled_end_effector_vel(2);
+
+    controlled_twist.angular.x = controlled_end_effector_vel(3);
+    controlled_twist.angular.y = controlled_end_effector_vel(4);
+    controlled_twist.angular.z = controlled_end_effector_vel(5);
+
     ROS_WARN("OCP Solved!!");
 }
 
