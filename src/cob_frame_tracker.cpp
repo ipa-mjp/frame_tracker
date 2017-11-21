@@ -422,8 +422,8 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     VariablesGrid control_ouput, state_output, error_param_output, cost_func_value;
     ocp_solver.getDifferentialStates(state_output);
     ocp_solver.getDifferentialStates("/home/bfb-ws/mpc_ws/src/frame_tracker/result/states.txt");
-//    ocp_solver.getControls(control_ouput);
-//    ocp_solver.getParameters(error_param_output);
+    ocp_solver.getControls(control_ouput);
+    ocp_solver.getParameters(error_param_output);
     //state_output.print();
     //control_ouput.print();
     //ROS_WARN_STREAM(" Objective function value: "<< ocp_solver.getObjectiveValue() );
@@ -434,6 +434,16 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     DVector controlled_end_effector_vel = state_output.getVector(5);
     //ROS_WARN_STREAM("Controlled twist: \n " << controled_joint_vel);
 //    ROS_WARN_STREAM("Controlled end-effector velocity: \n " << controlled_end_effector_vel);
+
+    /*
+    GnuplotWindow win;
+    win.addSubplot(state_output);
+    //win.addData(0,state_output);
+    //win.addData(0,error_param_output);
+    //win.setPlotData(q_dot, control_ouput);
+    win.addData(0,control_ouput);
+    win.plot();*/
+
 
     state_output.getVector(5).print();
     //ROS_WARN_STREAM("DVector vel: "<< );
