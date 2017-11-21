@@ -264,7 +264,6 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         return;
     }
 
-/*
     if (movable_trans_)
     {
         twist_msg.twist.linear.x = pid_controller_trans_x_.computeCommand(transform_tf.getOrigin().x(), period);
@@ -281,24 +280,24 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         twist_msg.twist.angular.y = pid_controller_rot_y_.computeCommand(transform_tf.getRotation().y(), period);
         twist_msg.twist.angular.z = pid_controller_rot_z_.computeCommand(transform_tf.getRotation().z(), period);
     }
-*/
+
     ROS_WARN_STREAM("Twist_msg: "<< twist_msg.twist);
 
     // eukl distance
     cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
 
     /// Store error between target and tracking frame into error variable of acado
-    ///if (cart_distance_ >= 0.00)
+    if (cart_distance_ >= 0.05)
     {
         if (movable_trans_)
         {
-        	solver(transform_tf, twist_msg.twist);
+        	solver(transform_tf, twist_msg);
         	//twist_msg.twist.angular.x = 0;    	twist_msg.twist.angular.y = 0;    	twist_msg.twist.angular.z = 0;
         }
 
         if (movable_rot_)
         {
-        	solver(transform_tf, twist_msg.twist);
+        	solver(transform_tf, twist_msg);
         	//twist_msg.twist.linear.x = 0;    	twist_msg.twist.linear.y = 0;    	twist_msg.twist.linear.z = 0;
         }
     }
@@ -311,8 +310,6 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
 //    twist_msg.twist.angular.x = 0;	twist_msg.twist.angular.y = 0;	twist_msg.twist.angular.z = 0;
 //    ROS_WARN_STREAM("Clear twist: "<< twist_msg.twist);
 
-
-
     //ROS_WARN_STREAM("Twist_msg_ACADO: "<< twist_msg.twist);
 
     // get target_twist
@@ -323,13 +320,14 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     target_twist_.rot.y(twist_msg.twist.angular.y);
     target_twist_.rot.z(twist_msg.twist.angular.z);
 
+
     if (do_publish)
     {
         twist_pub_.publish(twist_msg);
     }
 }
 
-void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::Twist& controlled_twist)
+void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::TwistStamped& controlled_twist)
 {
 
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
@@ -397,12 +395,13 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     ocp_problem.subjectTo(AT_START, q_dot(4) == 2.0);
     ocp_problem.subjectTo(AT_START, q_dot(5) == 2.0);
 
+    /*
     ocp_problem.subjectTo(AT_END, q_dot(0) == 0.0);
     ocp_problem.subjectTo(AT_END, q_dot(1) == 0.0);
     ocp_problem.subjectTo(AT_END, q_dot(2) == 0.0);
     ocp_problem.subjectTo(AT_END, q_dot(3) == 0.0);
     ocp_problem.subjectTo(AT_END, q_dot(4) == 0.0);
-    ocp_problem.subjectTo(AT_END, q_dot(5) == 0.0);
+    ocp_problem.subjectTo(AT_END, q_dot(5) == 0.0);*/
 
     OptimizationAlgorithm ocp_solver(ocp_problem);
     
@@ -432,25 +431,47 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
 
     DVector controled_joint_vel = control_ouput.getLastVector();
     //DVector controlled_end_effector_vel = state_output.getLastVector();
-    DVector controlled_end_effector_vel = state_output.getVector(9);
+    DVector controlled_end_effector_vel = state_output.getVector(5);
     //ROS_WARN_STREAM("Controlled twist: \n " << controled_joint_vel);
 //    ROS_WARN_STREAM("Controlled end-effector velocity: \n " << controlled_end_effector_vel);
 
     state_output.getVector(5).print();
     //ROS_WARN_STREAM("DVector vel: "<< );
 
-    //controlled_twist.linear.x = 0;	    controlled_twist.linear.y = 0;	    controlled_twist.linear.z = 0;
-    //controlled_twist.angular.x = 0;	    controlled_twist.angular.y = 0;	    controlled_twist.angular.z = 0;
+    controlled_twist.twist.linear.x = 0;	    controlled_twist.twist.linear.y = 0;	    controlled_twist.twist.linear.z = 0;
+    controlled_twist.twist.angular.x = 0;	    controlled_twist.twist.angular.y = 0;	    controlled_twist.twist.angular.z = 0;
 
-    // Convert DVector to geometry_msgs::TwistSt
-    controlled_twist.linear.x = controlled_end_effector_vel(0);
-    controlled_twist.linear.y = controlled_end_effector_vel(1);
-    controlled_twist.linear.z = controlled_end_effector_vel(2);
+	// Convert DVector to geometry_msgs::TwistSt
+	controlled_twist.twist.linear.x = controlled_end_effector_vel(0);
+	controlled_twist.twist.linear.y = controlled_end_effector_vel(1);
+	controlled_twist.twist.linear.z = controlled_end_effector_vel(2);
 
-    controlled_twist.angular.x = controlled_end_effector_vel(3);
-    controlled_twist.angular.y = controlled_end_effector_vel(4);
-    controlled_twist.angular.z = controlled_end_effector_vel(5);
+	controlled_twist.twist.angular.x = controlled_end_effector_vel(3);
+	controlled_twist.twist.angular.y = controlled_end_effector_vel(4);
+	controlled_twist.twist.angular.z = controlled_end_effector_vel(5);
 
+    /*
+    for (unsigned int i = 0; i < 10; ++i)
+    {
+
+    	DVector controlled_end_effector_vel = state_output.getVector(i);
+    	state_output.getVector(i).print();
+    	std::cout<<std::endl;
+
+    	// Convert DVector to geometry_msgs::TwistSt
+    	controlled_twist.twist.linear.x = controlled_end_effector_vel(0);
+    	controlled_twist.twist.linear.y = controlled_end_effector_vel(1);
+    	controlled_twist.twist.linear.z = controlled_end_effector_vel(2);
+
+    	controlled_twist.twist.angular.x = controlled_end_effector_vel(3);
+    	controlled_twist.twist.angular.y = controlled_end_effector_vel(4);
+    	controlled_twist.twist.angular.z = controlled_end_effector_vel(5);
+
+    	twist_pub_.publish(controlled_twist);
+
+    	ros::Duration(1.0).sleep();
+    }
+    */
     ROS_WARN("OCP Solved!!");
 }
 

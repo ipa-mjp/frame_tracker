@@ -111,7 +111,7 @@ public:
     void publishHoldTwist(const ros::Duration& period);
 
     ///ACADO optimization solver
-    void solver(tf::StampedTransform transform_tf, geometry_msgs::Twist& controlled_twist);
+    void solver(tf::StampedTransform transform_tf, geometry_msgs::TwistStamped& controlled_twist);
     bool zeroTwist(void);
 
     /// Action interface
