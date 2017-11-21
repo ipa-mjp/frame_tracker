@@ -264,7 +264,7 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         return;
     }
 
-
+/*
     if (movable_trans_)
     {
         twist_msg.twist.linear.x = pid_controller_trans_x_.computeCommand(transform_tf.getOrigin().x(), period);
@@ -281,14 +281,14 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         twist_msg.twist.angular.y = pid_controller_rot_y_.computeCommand(transform_tf.getRotation().y(), period);
         twist_msg.twist.angular.z = pid_controller_rot_z_.computeCommand(transform_tf.getRotation().z(), period);
     }
-
+*/
     ROS_WARN_STREAM("Twist_msg: "<< twist_msg.twist);
 
     // eukl distance
     cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
 
     /// Store error between target and tracking frame into error variable of acado
-    if (cart_distance_ >= 0.05)
+    ///if (cart_distance_ >= 0.00)
     {
         if (movable_trans_)
         {
@@ -378,7 +378,31 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     OCP ocp_problem(0.0, 1.0, 10);
     ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
     ocp_problem.subjectTo(f);
-    ocp_problem.subjectTo( -0.08 <= pose_error <= 0.08);	//error bound
+
+    // Error bound
+    ocp_problem.subjectTo( -0.06 <= pose_error(0) <= 0.06);
+    ocp_problem.subjectTo( -0.06 <= pose_error(1) <= 0.06);
+    ocp_problem.subjectTo( -0.06 <= pose_error(2) <= 0.06);
+    ocp_problem.subjectTo( -0.07 <= pose_error(3) <= 0.07);
+    ocp_problem.subjectTo( -0.08 <= pose_error(4) <= 0.08);
+    ocp_problem.subjectTo( -0.09 <= pose_error(5) <= 0.09);
+    ocp_problem.subjectTo( -0.1 <= pose_error(6) <= 0.1);
+
+
+    // Starting joint velocity
+    ocp_problem.subjectTo(AT_START, q_dot(0) == 2.0);
+    ocp_problem.subjectTo(AT_START, q_dot(1) == 2.0);
+    ocp_problem.subjectTo(AT_START, q_dot(2) == 2.0);
+    ocp_problem.subjectTo(AT_START, q_dot(3) == 2.0);
+    ocp_problem.subjectTo(AT_START, q_dot(4) == 2.0);
+    ocp_problem.subjectTo(AT_START, q_dot(5) == 2.0);
+
+    ocp_problem.subjectTo(AT_END, q_dot(0) == 0.0);
+    ocp_problem.subjectTo(AT_END, q_dot(1) == 0.0);
+    ocp_problem.subjectTo(AT_END, q_dot(2) == 0.0);
+    ocp_problem.subjectTo(AT_END, q_dot(3) == 0.0);
+    ocp_problem.subjectTo(AT_END, q_dot(4) == 0.0);
+    ocp_problem.subjectTo(AT_END, q_dot(5) == 0.0);
 
     OptimizationAlgorithm ocp_solver(ocp_problem);
     
@@ -389,7 +413,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
     ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
-    ocp_solver.set(KKT_TOLERANCE, 1.000000E-04);
+    ocp_solver.set(KKT_TOLERANCE, 1.000000E-06);
     ocp_solver.set(MAX_NUM_ITERATIONS, 1000);
     //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
 
@@ -415,17 +439,17 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     state_output.getVector(5).print();
     //ROS_WARN_STREAM("DVector vel: "<< );
 
-    controlled_twist.linear.x = 0;	    controlled_twist.linear.y = 0;	    controlled_twist.linear.z = 0;
-    controlled_twist.angular.x = 0;	    controlled_twist.angular.y = 0;	    controlled_twist.angular.z = 0;
+    //controlled_twist.linear.x = 0;	    controlled_twist.linear.y = 0;	    controlled_twist.linear.z = 0;
+    //controlled_twist.angular.x = 0;	    controlled_twist.angular.y = 0;	    controlled_twist.angular.z = 0;
 
     // Convert DVector to geometry_msgs::TwistSt
-    controlled_twist.linear.x = controlled_end_effector_vel(0)* 4.0;
-    controlled_twist.linear.y = controlled_end_effector_vel(1)* 4.0;
-    controlled_twist.linear.z = controlled_end_effector_vel(2)* 4.0;
+    controlled_twist.linear.x = controlled_end_effector_vel(0);
+    controlled_twist.linear.y = controlled_end_effector_vel(1);
+    controlled_twist.linear.z = controlled_end_effector_vel(2);
 
-    controlled_twist.angular.x = controlled_end_effector_vel(3)* 4.0;
-    controlled_twist.angular.y = controlled_end_effector_vel(4)* 4.0;
-    controlled_twist.angular.z = controlled_end_effector_vel(5)* 4.0;
+    controlled_twist.angular.x = controlled_end_effector_vel(3);
+    controlled_twist.angular.y = controlled_end_effector_vel(4);
+    controlled_twist.angular.z = controlled_end_effector_vel(5);
 
     ROS_WARN("OCP Solved!!");
 }
