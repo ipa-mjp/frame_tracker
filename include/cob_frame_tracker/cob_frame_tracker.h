@@ -164,6 +164,7 @@ private:
 
     ros::Subscriber jointstate_sub_;
     ros::Publisher twist_pub_;
+    ros::Publisher joint_vel_pub_;
 
     ros::ServiceServer start_tracking_server_;
     ros::ServiceServer start_lookat_server_;
