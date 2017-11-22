@@ -63,10 +63,11 @@
 			<remap from="base/odometry" to="/base/odometry_controller/odometry"/>
 			<remap from="base/command" to="/base/twist_mux/command_syncmm"/>
 		</node>
-		<node pkg="frame_tracker" type="cob_frame_tracker_node" name="frame_tracker" cwd="node" respawn="false" output="screen"/>
+		
+		<node pkg="frame_tracker" type="frame_tracker_node" name="frame_tracker" cwd="node" respawn="false" output="screen"/>
 		<node pkg="frame_tracker" type="interactive_frame_target_node" name="interactive_target" cwd="node" respawn="false" output="screen"/>
 		
-		<node pkg="cob_obstacle_distance" type="cob_obstacle_distance" name="obstacle_distance" cwd="node" respawn="false" output="screen"/>
+		<!--node pkg="cob_obstacle_distance" type="cob_obstacle_distance" name="obstacle_distance" cwd="node" respawn="false" output="screen"/-->
 
 	</group> 
      
