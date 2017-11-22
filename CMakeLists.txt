@@ -57,8 +57,8 @@ add_dependencies(interactive_frame_target ${catkin_EXPORTED_TARGETS})
 target_link_libraries(interactive_frame_target ${catkin_LIBRARIES} ${libacado})
 
 
-add_executable(cob_frame_tracker_node src/cob_frame_tracker_node.cpp)
-target_link_libraries(cob_frame_tracker_node cob_frame_tracker ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${libacado})
+add_executable(frame_tracker_node src/cob_frame_tracker_node.cpp)
+target_link_libraries(frame_tracker_node cob_frame_tracker ${catkin_LIBRARIES} ${CERES_LIBRARIES} ${libacado})
 
 add_executable(interactive_frame_target_node src/interactive_frame_target_node.cpp)
 target_link_libraries(interactive_frame_target_node interactive_frame_target ${catkin_LIBRARIES} ${libacado})
@@ -70,7 +70,7 @@ target_link_libraries(spacenav_commander ${catkin_LIBRARIES} ${libacado})
 roslint_cpp()
 
 ### INSTALL ###
-install(TARGETS kinematic_computations cob_frame_tracker cob_frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
+install(TARGETS kinematic_computations cob_frame_tracker frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
