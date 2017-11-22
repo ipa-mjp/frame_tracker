@@ -366,8 +366,6 @@ void CobFrameTracker::solver()
     pose_error.clearStaticCounters();
     q_dot.clearStaticCounters();
 
-    // Wieght matrix
-    DMatrix K = 4.0 * Eigen::MatrixXd::Identity(7,7);
 
     // initialize pose error
     DVector pose_error_init(7);
@@ -389,14 +387,28 @@ void CobFrameTracker::solver()
     DifferentialEquation f;             // Define differential equation
     f << dot(x) == jac_mat * q_dot; 
 
+    Function h;
+    //h << x;
+    //h << pose_error;
+    h << pose_error_init;
+    //h << q_dot;
+
+    // Wieght matrix
+    DMatrix K = Eigen::MatrixXd::Identity(7,7);
+
+    // Reference
+    DVector r(7);
+    r.setAll(1.0);
+
     // Define ocp problem
     OCP ocp_problem(0.0, 1.0, 10);
-    ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
+    //ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
+    ocp_problem.minimizeLSQ(K, h, r);
     ocp_problem.subjectTo(f);
 
     RealTimeAlgorithm ocp_solver(ocp_problem, 0.025);
 
-    ocp_solver.initializeParameters(pose_error_init);
+    //ocp_solver.initializeParameters(pose_error_init);
     ocp_solver.initializeControls(control_init);
 
     // set solver option
@@ -404,7 +416,7 @@ void CobFrameTracker::solver()
     ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
     ocp_solver.set(KKT_TOLERANCE, 1.000000E-06);
-    ocp_solver.set(MAX_NUM_ITERATIONS, 1);
+    ocp_solver.set(MAX_NUM_ITERATIONS, 10);
     ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
     ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
     //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
@@ -420,37 +432,55 @@ void CobFrameTracker::solver()
     diffState_init.setAll(2.0); controlState_init.setAll(2.0); error_state_init.setAll(0.0);
     //param_init.setAll(0.0);
     //diffState_init(0) = 0.01;
-    controller.init(0.0, diffState_init, error_state_init );
+    controller.init(0.0, diffState_init);
     //controller.init(0.0, diffState_init, error_state_init );
-    controller.step(0.0, diffState_init, error_state_init);
+    controller.step(0.0, diffState_init);
 
     DVector controlled_joint_vel;
     controller.getU(controlled_joint_vel);
-    ROS_WARN_STREAM("U: "<<controlled_joint_vel);
+    ROS_WARN_STREAM("U: \n"<<controlled_joint_vel);
 
     ROS_WARN("Controller initialization done...");
+
+	std_msgs::Float64MultiArray pub_data_joint_vel;
 
 	// Convert DVector to geometry_msgs::TwistSt
     if (!controlled_joint_vel.isEmpty())
     {
-    	std_msgs::Float64MultiArray pub_data_joint_vel;
+/*
+    	pub_data_joint_vel.data.push_back(controlled_joint_vel(0) * 4.0);
+        pub_data_joint_vel.data.push_back(controlled_joint_vel(1) * 4.0);
+        pub_data_joint_vel.data.push_back(controlled_joint_vel(2) * 4.0);
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(3) * 4.0);
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(4) * 4.0);
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(5) * 4.0);
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(6) * 4.0);
+*/
 
-    	pub_data_joint_vel.data.push_back(controlled_joint_vel(0));
-        pub_data_joint_vel.data.push_back(controlled_joint_vel(1));
-        pub_data_joint_vel.data.push_back(controlled_joint_vel(2));
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(3));
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(4));
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(5));
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(6));
+      	pub_data_joint_vel.data.push_back(2.0);
+      	pub_data_joint_vel.data.push_back( 2.0 );
+      	pub_data_joint_vel.data.push_back(2.0);
+      	pub_data_joint_vel.data.push_back(2.0);
+      	pub_data_joint_vel.data.push_back(2.0);
+      	pub_data_joint_vel.data.push_back(2.0);
+    	pub_data_joint_vel.data.push_back(2.0);
 
-	    joint_vel_pub_.publish(pub_data_joint_vel);
     }
     else
     {
     	std::cout << "Empty joint velocity" << std::endl;
+    	pub_data_joint_vel.data.push_back(0.0);
+        pub_data_joint_vel.data.push_back(0.0);
+        pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+
     }
 
-    
+    joint_vel_pub_.publish(pub_data_joint_vel);
+
     /*
     // Plot controls and states
     VariablesGrid control_ouput, state_output, error_param_output, cost_func_value;
