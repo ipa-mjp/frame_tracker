@@ -164,6 +164,7 @@ bool CobFrameTracker::initialize()
 
     jointstate_sub_ = nh_.subscribe("joint_states", 1, &CobFrameTracker::jointstateCallback, this);
     twist_pub_ = nh_twist.advertise<geometry_msgs::TwistStamped> ("command_twist_stamped", 1);
+    // Carefully use node handler
     joint_vel_pub_ = nh_twist.advertise<std_msgs::Float64MultiArray>("joint_group_velocity_controller/command", 1);
 
 
