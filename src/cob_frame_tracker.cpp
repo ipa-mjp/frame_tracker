@@ -41,7 +41,6 @@
 #include <kdl/jntarray.hpp>
 #include <kdl/jntarrayvel.hpp>
 
-
 bool CobFrameTracker::initialize()
 {
     ros::NodeHandle nh_;
@@ -221,7 +220,8 @@ void CobFrameTracker::run(const ros::TimerEvent& event)
             ht_.hold = abortion_counter_ >= max_abortions_;  // only for service call in case of action ht_.hold = false. What to do with actions?
         }
 
-        publishTwist(period, !ht_.hold);  // if not publishing then just update data!
+        solver();
+        //publishTwist(period, !ht_.hold);  // if not publishing then just update data!
     }
 }
 
@@ -287,7 +287,7 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
 
     // eukl distance
     cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
-
+/*
     /// Store error between target and tracking frame into error variable of acado
     if (cart_distance_ >= 0.05)
     {
@@ -303,7 +303,7 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
         	//twist_msg.twist.linear.x = 0;    	twist_msg.twist.linear.y = 0;    	twist_msg.twist.linear.z = 0;
         }
     }
-
+*/
     // rot distance
     // // TODO: change to cartesian rot
     // rot_distance_ = 2* acos(transform_msg.transform.rotation.w);
@@ -313,6 +313,11 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
 //    ROS_WARN_STREAM("Clear twist: "<< twist_msg.twist);
 
     //ROS_WARN_STREAM("Twist_msg_ACADO: "<< twist_msg.twist);
+
+    if (cart_distance_ >= 0.05)
+    {
+        solver();
+    }
 
     // get target_twist
     target_twist_.vel.x(twist_msg.twist.linear.x);
@@ -329,10 +334,18 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     }
 }
 
-void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::TwistStamped& controlled_twist)
+void CobFrameTracker::solver()
 {
 
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
+
+    tf::StampedTransform transform_tf;
+    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
+
+    cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
+
+    if (cart_distance_ == 0.00)
+    	return;
 
     // Get position error vector
     //bool success = this->getTransform("arm_7_link", "arm_7_target", transform_tf);
@@ -345,7 +358,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
 
     DifferentialState x("",m,1);                // Use for end-effector velocity
     Control q_dot("",n,1);                      // Use for joint velocity
-    Parameter pose_error("",6,1);
+    Parameter pose_error("",7,1);
 
     x.clearStaticCounters();
     pose_error.clearStaticCounters();
@@ -355,7 +368,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     DMatrix K = 4.0 * Eigen::MatrixXd::Identity(7,7);
 
     // initialize pose error
-    DVector pose_error_init(6);
+    DVector pose_error_init(7);
     pose_error_init.setAll(0.0);
     pose_error_init(0) = transform_tf.getOrigin().x();
     pose_error_init(1) = transform_tf.getOrigin().y();
@@ -364,7 +377,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     pose_error_init(3) = transform_tf.getRotation().x();
     pose_error_init(4) = transform_tf.getRotation().y();
     pose_error_init(5) = transform_tf.getRotation().z();
-    //pose_error_init(6) = transform_tf.getRotation().w();
+    pose_error_init(6) = transform_tf.getRotation().w();
 
     DVector control_init(n);
     control_init.setAll(0.0);
@@ -379,39 +392,20 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
     ocp_problem.subjectTo(f);
 
-    // Error bound
-    //ocp_problem.setConstraint( );
-/*    ocp_problem.subjectTo( -0.06 <= pose_error(0) <= 0.06);
-    ocp_problem.subjectTo( -0.06 <= pose_error(1) <= 0.06);
-    ocp_problem.subjectTo( -0.06 <= pose_error(2) <= 0.06);
-    ocp_problem.subjectTo( -0.07 <= pose_error(3) <= 0.07);
-    ocp_problem.subjectTo( -0.08 <= pose_error(4) <= 0.08);
-    ocp_problem.subjectTo( -0.09 <= pose_error(5) <= 0.09);
-    ocp_problem.subjectTo( -0.1 <= pose_error(6) <= 0.1);
-
-    // Starting joint velocity
-    ocp_problem.subjectTo(AT_START, q_dot(0) == 2.0);
-    ocp_problem.subjectTo(AT_START, q_dot(1) == 2.0);
-    ocp_problem.subjectTo(AT_START, q_dot(2) == 2.0);
-    ocp_problem.subjectTo(AT_START, q_dot(3) == 2.0);
-    ocp_problem.subjectTo(AT_START, q_dot(4) == 2.0);
-    ocp_problem.subjectTo(AT_START, q_dot(5) == 2.0);
-  */
-    
     RealTimeAlgorithm ocp_solver(ocp_problem, 0.025);
 
     ocp_solver.initializeParameters(pose_error_init);
     ocp_solver.initializeControls(control_init);
 
     // set solver option
-    ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
+    //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
     ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
     ocp_solver.set(KKT_TOLERANCE, 1.000000E-06);
     ocp_solver.set(MAX_NUM_ITERATIONS, 1);
     ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
     ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
-    //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
+    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
 
     //StaticReferenceTrajectory zeroReference("/home/bfb-ws/mpc_ws/src/frame_tracker/result/ref.txt");
 
@@ -420,32 +414,52 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     Controller controller(ocp_solver);
 
     //DVector diffState_init (m), param_init(7);
-    DVector diffState_init(6);
-    diffState_init.setAll(0.0);
+    DVector diffState_init(6), controlState_init(7), error_state_init;
+    diffState_init.setAll(2.0); controlState_init.setAll(2.0); error_state_init.setAll(0.0);
     //param_init.setAll(0.0);
-    diffState_init(0) = 0.01;
-    controller.init(0.0, diffState_init);
-    controller.step(0.0, diffState_init);
+    //diffState_init(0) = 0.01;
+    ///controller.init(0.0, diffState_init, error_state_init );
+    controller.init(0.0, diffState_init, error_state_init );
+    //controller.step(0.0, diffState_init, error_state_init);
 
-    DVector controlled_end_effector_vel;
-    controller.getU(controlled_end_effector_vel);
-    ROS_WARN_STREAM("U: "<<controlled_end_effector_vel);
+    DVector controlled_joint_vel;
+    controller.getU(controlled_joint_vel);
+    ROS_WARN_STREAM("U: "<<controlled_joint_vel);
 
     ROS_WARN("Controller initialization done...");
 
-    controlled_twist.twist.linear.x = 0;	    controlled_twist.twist.linear.y = 0;	    controlled_twist.twist.linear.z = 0;
-    controlled_twist.twist.angular.x = 0;	    controlled_twist.twist.angular.y = 0;	    controlled_twist.twist.angular.z = 0;
+    std_msgs::Float64MultiArray pub_data_joint_vel;
 
 	// Convert DVector to geometry_msgs::TwistSt
-	controlled_twist.twist.linear.x = controlled_end_effector_vel(0);
-	controlled_twist.twist.linear.y = controlled_end_effector_vel(1);
-	controlled_twist.twist.linear.z = controlled_end_effector_vel(2);
+    if (!controlled_joint_vel.isEmpty())
+    {
+    //	std_msgs::Float64MultiArray pub_data_joint_vel;
 
-	controlled_twist.twist.angular.x = controlled_end_effector_vel(3);
-	controlled_twist.twist.angular.y = controlled_end_effector_vel(4);
-	controlled_twist.twist.angular.z = controlled_end_effector_vel(5);
+    	pub_data_joint_vel.data.push_back(controlled_joint_vel(0));
+        pub_data_joint_vel.data.push_back(controlled_joint_vel(1));
+        pub_data_joint_vel.data.push_back(controlled_joint_vel(2));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(3));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(4));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(5));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(6));
 
 
+    }
+    else
+    {
+    	std::cout << "Empty joint velocity" << std::endl;
+        pub_data_joint_vel.data.push_back(2.0);
+        pub_data_joint_vel.data.push_back(2.0);
+        pub_data_joint_vel.data.push_back(2.0);
+		pub_data_joint_vel.data.push_back(2.0);
+		pub_data_joint_vel.data.push_back(2.0);
+		pub_data_joint_vel.data.push_back(2.0);
+		pub_data_joint_vel.data.push_back(2.0);
+
+
+    }
+    joint_vel_pub_.publish(pub_data_joint_vel);
+    
     /*
     // Plot controls and states
     VariablesGrid control_ouput, state_output, error_param_output, cost_func_value;
