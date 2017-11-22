@@ -220,8 +220,8 @@ void CobFrameTracker::run(const ros::TimerEvent& event)
             ht_.hold = abortion_counter_ >= max_abortions_;  // only for service call in case of action ht_.hold = false. What to do with actions?
         }
 
-        solver();
-        //publishTwist(period, !ht_.hold);  // if not publishing then just update data!
+        //solver();
+        publishTwist(period, !ht_.hold);  // if not publishing then just update data!
     }
 }
 
@@ -314,9 +314,10 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
 
     //ROS_WARN_STREAM("Twist_msg_ACADO: "<< twist_msg.twist);
 
-    if (cart_distance_ >= 0.05)
+    if (cart_distance_ >= 0.06)
     {
         solver();
+        do_publish = false;
     }
 
     // get target_twist
@@ -398,14 +399,14 @@ void CobFrameTracker::solver()
     ocp_solver.initializeControls(control_init);
 
     // set solver option
-    //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
+    ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
     ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
     ocp_solver.set(KKT_TOLERANCE, 1.000000E-06);
     ocp_solver.set(MAX_NUM_ITERATIONS, 1);
     ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
     ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
-    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
+    //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
 
     //StaticReferenceTrajectory zeroReference("/home/bfb-ws/mpc_ws/src/frame_tracker/result/ref.txt");
 
@@ -418,9 +419,9 @@ void CobFrameTracker::solver()
     diffState_init.setAll(2.0); controlState_init.setAll(2.0); error_state_init.setAll(0.0);
     //param_init.setAll(0.0);
     //diffState_init(0) = 0.01;
-    ///controller.init(0.0, diffState_init, error_state_init );
     controller.init(0.0, diffState_init, error_state_init );
-    //controller.step(0.0, diffState_init, error_state_init);
+    //controller.init(0.0, diffState_init, error_state_init );
+    controller.step(0.0, diffState_init, error_state_init);
 
     DVector controlled_joint_vel;
     controller.getU(controlled_joint_vel);
@@ -428,12 +429,10 @@ void CobFrameTracker::solver()
 
     ROS_WARN("Controller initialization done...");
 
-    std_msgs::Float64MultiArray pub_data_joint_vel;
-
 	// Convert DVector to geometry_msgs::TwistSt
     if (!controlled_joint_vel.isEmpty())
     {
-    //	std_msgs::Float64MultiArray pub_data_joint_vel;
+    	std_msgs::Float64MultiArray pub_data_joint_vel;
 
     	pub_data_joint_vel.data.push_back(controlled_joint_vel(0));
         pub_data_joint_vel.data.push_back(controlled_joint_vel(1));
@@ -443,22 +442,13 @@ void CobFrameTracker::solver()
 		pub_data_joint_vel.data.push_back(controlled_joint_vel(5));
 		pub_data_joint_vel.data.push_back(controlled_joint_vel(6));
 
-
+	    joint_vel_pub_.publish(pub_data_joint_vel);
     }
     else
     {
     	std::cout << "Empty joint velocity" << std::endl;
-        pub_data_joint_vel.data.push_back(2.0);
-        pub_data_joint_vel.data.push_back(2.0);
-        pub_data_joint_vel.data.push_back(2.0);
-		pub_data_joint_vel.data.push_back(2.0);
-		pub_data_joint_vel.data.push_back(2.0);
-		pub_data_joint_vel.data.push_back(2.0);
-		pub_data_joint_vel.data.push_back(2.0);
-
-
     }
-    joint_vel_pub_.publish(pub_data_joint_vel);
+
     
     /*
     // Plot controls and states
