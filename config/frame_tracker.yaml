@@ -6,6 +6,8 @@ chain_base_link: arm_podest_link
 chain_tip_link: arm_7_link
 root_frame: world
 
+controller_interface: 0    #Velocity 0, Position 1, Trajectory 2, JointStates 3
+
 # twist controller parameters
 twist_controller:
   controller_interface: 3    #Velocity 0, Position 1, Trajectory 2, JointStates 3
