@@ -378,6 +378,7 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     ocp_problem.subjectTo(f);
 
     // Error bound
+    //ocp_problem.setConstraint( );
     ocp_problem.subjectTo( -0.06 <= pose_error(0) <= 0.06);
     ocp_problem.subjectTo( -0.06 <= pose_error(1) <= 0.06);
     ocp_problem.subjectTo( -0.06 <= pose_error(2) <= 0.06);
@@ -452,9 +453,9 @@ void CobFrameTracker::solver( tf::StampedTransform transform_tf, geometry_msgs::
     controlled_twist.twist.angular.x = 0;	    controlled_twist.twist.angular.y = 0;	    controlled_twist.twist.angular.z = 0;
 
 	// Convert DVector to geometry_msgs::TwistSt
-	controlled_twist.twist.linear.x = controlled_end_effector_vel(0);
-	controlled_twist.twist.linear.y = controlled_end_effector_vel(1);
-	controlled_twist.twist.linear.z = controlled_end_effector_vel(2);
+	controlled_twist.twist.linear.x = controlled_end_effector_vel(0) * 4.0;
+	controlled_twist.twist.linear.y = controlled_end_effector_vel(1)* 4.0;
+	controlled_twist.twist.linear.z = controlled_end_effector_vel(2)* 4.0;
 
 	controlled_twist.twist.angular.x = controlled_end_effector_vel(3);
 	controlled_twist.twist.angular.y = controlled_end_effector_vel(4);
