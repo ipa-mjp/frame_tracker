@@ -165,7 +165,7 @@ bool CobFrameTracker::initialize()
     jointstate_sub_ = nh_.subscribe("joint_states", 1, &CobFrameTracker::jointstateCallback, this);
     twist_pub_ = nh_twist.advertise<geometry_msgs::TwistStamped> ("command_twist_stamped", 1);
     // Carefully use node handler
-    joint_vel_pub_ = nh_twist.advertise<std_msgs::Float64MultiArray>("joint_group_velocity_controller/command", 1);
+    joint_vel_pub_ = nh_.advertise<std_msgs::Float64MultiArray>("joint_group_velocity_controller/command", 1);
 
 
     start_tracking_server_ = nh_tracker.advertiseService("start_tracking", &CobFrameTracker::startTrackingCallback, this);
@@ -379,6 +379,9 @@ void CobFrameTracker::solver()
     pose_error_init(5) = transform_tf.getRotation().z();
     pose_error_init(6) = transform_tf.getRotation().w();
 
+
+    ROS_WARN_STREAM("Error Pose init: "<< pose_error_init);
+
     DVector control_init(n);
     control_init.setAll(0.0);
     control_init = last_q_dot_.data;
@@ -389,37 +392,55 @@ void CobFrameTracker::solver()
 
     Function h;
     //h << x;
-    //h << pose_error;
-    h << pose_error_init;
+    h << pose_error;
+    //h << pose_error_init;
     //h << q_dot;
 
     // Wieght matrix
     DMatrix K = Eigen::MatrixXd::Identity(7,7);
+    K(0,0) = 100;
+    K(1,1) = 10;
+    K(2,2) = 1;
 
     // Reference
     DVector r(7);
-    r.setAll(1.0);
+    r.setAll(0.00);
+    //r(1) = 1;
 
     // Define ocp problem
     OCP ocp_problem(0.0, 1.0, 10);
     //ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
-    ocp_problem.minimizeLSQ(K, h, r);
+    //ocp_problem.minimizeLSQ(K, h, r);
+    ocp_problem.minimizeLSQ(h);
     ocp_problem.subjectTo(f);
 
-    RealTimeAlgorithm ocp_solver(ocp_problem, 0.025);
+    // Error bound
+    //ocp_problem.subjectTo( index, DVector lb_, Expression exp_, DVector up_);
+    //ocp_problem.subjectTo( -0.06 <= pose_error(0) <= 0.06);
+    /*ocp_problem.subjectTo( -0.06 <= pose_error(1) <= 0.06);
+    ocp_problem.subjectTo( -0.06 <= pose_error(2) <= 0.06);
+    ocp_problem.subjectTo( -0.07 <= pose_error(3) <= 0.07);
+    ocp_problem.subjectTo( -0.08 <= pose_error(4) <= 0.08);
+    ocp_problem.subjectTo( -0.09 <= pose_error(5) <= 0.09);
+    ocp_problem.subjectTo( -0.1 <= pose_error(6) <= 0.1);*/
 
-    //ocp_solver.initializeParameters(pose_error_init);
+    RealTimeAlgorithm ocp_solver(ocp_problem, 0.025);
+    //OptimizationAlgorithm ocp_solver(ocp_problem);
+
+    ocp_solver.initializeParameters(pose_error_init);
     ocp_solver.initializeControls(control_init);
 
     // set solver option
-    ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
+    //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
     ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
     ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
-    ocp_solver.set(KKT_TOLERANCE, 1.000000E-06);
+    ocp_solver.set(KKT_TOLERANCE, 1.000000E-15);
     ocp_solver.set(MAX_NUM_ITERATIONS, 10);
     ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
-    ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
-    //ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
+    //ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
+    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-8);
+
+    //ocp_solver.solve();
 
     //StaticReferenceTrajectory zeroReference("/home/bfb-ws/mpc_ws/src/frame_tracker/result/ref.txt");
 
@@ -432,18 +453,19 @@ void CobFrameTracker::solver()
     diffState_init.setAll(2.0); controlState_init.setAll(2.0); error_state_init.setAll(0.0);
     //param_init.setAll(0.0);
     //diffState_init(0) = 0.01;
-    controller.init(0.0, diffState_init);
+    controller.init(0.0, diffState_init, error_state_init );
     //controller.init(0.0, diffState_init, error_state_init );
-    controller.step(0.0, diffState_init);
+    controller.step(0.0, diffState_init, error_state_init );
 
     DVector controlled_joint_vel;
-    controller.getU(controlled_joint_vel);
+//    controller.getU(controlled_joint_vel);
     ROS_WARN_STREAM("U: \n"<<controlled_joint_vel);
 
     ROS_WARN("Controller initialization done...");
 
 	std_msgs::Float64MultiArray pub_data_joint_vel;
 
+//  DVector controlled_joint_vel;
 	// Convert DVector to geometry_msgs::TwistSt
     if (!controlled_joint_vel.isEmpty())
     {
@@ -458,28 +480,30 @@ void CobFrameTracker::solver()
 */
 
       	pub_data_joint_vel.data.push_back(2.0);
-      	pub_data_joint_vel.data.push_back( 2.0 );
+      	pub_data_joint_vel.data.push_back(1.0);
+      	pub_data_joint_vel.data.push_back(1.0);
       	pub_data_joint_vel.data.push_back(2.0);
-      	pub_data_joint_vel.data.push_back(2.0);
-      	pub_data_joint_vel.data.push_back(2.0);
-      	pub_data_joint_vel.data.push_back(2.0);
-    	pub_data_joint_vel.data.push_back(2.0);
+      	pub_data_joint_vel.data.push_back(1.5);
+      	pub_data_joint_vel.data.push_back(0.7);
+    	pub_data_joint_vel.data.push_back(1.0);
 
     }
     else
     {
     	std::cout << "Empty joint velocity" << std::endl;
-    	pub_data_joint_vel.data.push_back(0.0);
-        pub_data_joint_vel.data.push_back(0.0);
-        pub_data_joint_vel.data.push_back(0.0);
-		pub_data_joint_vel.data.push_back(0.0);
-		pub_data_joint_vel.data.push_back(0.0);
-		pub_data_joint_vel.data.push_back(0.0);
-		pub_data_joint_vel.data.push_back(0.0);
+    	pub_data_joint_vel.data.push_back(1.0);
+        pub_data_joint_vel.data.push_back(1.0);
+        pub_data_joint_vel.data.push_back(1.0);
+		pub_data_joint_vel.data.push_back(1.0);
+		pub_data_joint_vel.data.push_back(1.0);
+		pub_data_joint_vel.data.push_back(1.0);
+		pub_data_joint_vel.data.push_back(1.0);
 
     }
 
     joint_vel_pub_.publish(pub_data_joint_vel);
+
+    ros::Duration(0.1).sleep();
 
     /*
     // Plot controls and states
