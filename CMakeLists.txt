@@ -70,11 +70,11 @@ target_link_libraries(spacenav_commander ${catkin_LIBRARIES} ${libacado})
 roslint_cpp()
 
 ### INSTALL ###
-install(TARGETS kinematic_computations cob_frame_tracker frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
- ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
- LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
- RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-)
+#install(TARGETS kinematic_computations cob_frame_tracker frame_tracker_node interactive_frame_target interactive_frame_target_node spacenav_commander
+# ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+# LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+# RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+#)
 
 install(DIRECTORY include/${PROJECT_NAME}/
  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
