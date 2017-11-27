@@ -164,7 +164,7 @@ bool CobFrameTracker::initialize()
 
     jointstate_sub_ = nh_.subscribe("joint_states", 1, &CobFrameTracker::jointstateCallback, this);
     twist_pub_ = nh_twist.advertise<geometry_msgs::TwistStamped> ("command_twist_stamped", 1);
-    // Carefully use node handler
+    // Carefully use node handler, nh_twist
     joint_vel_pub_ = nh_.advertise<std_msgs::Float64MultiArray>("joint_group_velocity_controller/command", 1);
 
 
@@ -181,7 +181,7 @@ bool CobFrameTracker::initialize()
     timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
     timer_.start();
 
-    ROS_INFO("CobFrameTracker ... initialized!");
+    ROS_INFO(" ======================= CobFrameTracker ... initialized! ==================== ");
 
     return true;
 }
@@ -222,7 +222,8 @@ void CobFrameTracker::run(const ros::TimerEvent& event)
         }
 
         //solver();
-        publishTwist(period, !ht_.hold);  // if not publishing then just update data!
+        //publishTwist(period, !ht_.hold);  // if not publishing then just update data!
+        publishTwist(period, true);
     }
 }
 
@@ -288,32 +289,10 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
 
     // eukl distance
     cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
-/*
-    /// Store error between target and tracking frame into error variable of acado
-    if (cart_distance_ >= 0.05)
-    {
-        if (movable_trans_)
-        {
-        	solver(transform_tf, twist_msg);
-        	//twist_msg.twist.angular.x = 0;    	twist_msg.twist.angular.y = 0;    	twist_msg.twist.angular.z = 0;
-        }
 
-        if (movable_rot_)
-        {
-        	solver(transform_tf, twist_msg);
-        	//twist_msg.twist.linear.x = 0;    	twist_msg.twist.linear.y = 0;    	twist_msg.twist.linear.z = 0;
-        }
-    }
-*/
     // rot distance
     // // TODO: change to cartesian rot
     // rot_distance_ = 2* acos(transform_msg.transform.rotation.w);
-
-//    twist_msg.twist.linear.x = 0;	twist_msg.twist.linear.y = 0;	twist_msg.twist.linear.z = 0;
-//    twist_msg.twist.angular.x = 0;	twist_msg.twist.angular.y = 0;	twist_msg.twist.angular.z = 0;
-//    ROS_WARN_STREAM("Clear twist: "<< twist_msg.twist);
-
-    //ROS_WARN_STREAM("Twist_msg_ACADO: "<< twist_msg.twist);
 
     if (cart_distance_ >= 0.06)
     {
@@ -328,7 +307,6 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     target_twist_.rot.x(twist_msg.twist.angular.x);
     target_twist_.rot.y(twist_msg.twist.angular.y);
     target_twist_.rot.z(twist_msg.twist.angular.z);
-
 
     if (do_publish)
     {
@@ -349,9 +327,6 @@ void CobFrameTracker::solver()
     if (cart_distance_ == 0.00)
     	return;
 
-    // Get position error vector
-    //bool success = this->getTransform("arm_7_link", "arm_7_target", transform_tf);
-
     // get Jacobian matrix
     DMatrix jac_mat = J_Mat;
     
@@ -366,69 +341,47 @@ void CobFrameTracker::solver()
     pose_error.clearStaticCounters();
     q_dot.clearStaticCounters();
 
-
-    // initialize pose error
-    DVector pose_error_init(7);
+    // initialize pose error, controls and states
+    DVector pose_error_init(7), control_init(n), states_init(m);
     pose_error_init.setAll(0.0);
     pose_error_init(0) = transform_tf.getOrigin().x();
     pose_error_init(1) = transform_tf.getOrigin().y();
     pose_error_init(2) = transform_tf.getOrigin().z();
-
     pose_error_init(3) = transform_tf.getRotation().x();
     pose_error_init(4) = transform_tf.getRotation().y();
     pose_error_init(5) = transform_tf.getRotation().z();
     pose_error_init(6) = transform_tf.getRotation().w();
+    ROS_DEBUG_STREAM("Error Pose init: "<< pose_error_init);
 
-
-    ROS_WARN_STREAM("Error Pose init: "<< pose_error_init);
-
-    DVector control_init(n);
     control_init.setAll(0.0);
     control_init = last_q_dot_.data;
     //ROS_WARN_STREAM("Joint velocity: "<< control_init);
 
+    states_init.setAll(0.0);
+
     DifferentialEquation f;             // Define differential equation
     f << dot(x) == jac_mat * q_dot; 
 
-    Function h;
-    //h << x;
-    h << pose_error;
-    //h << pose_error_init;
-    //h << q_dot;
-
-    // Wieght matrix
-    DMatrix K = Eigen::MatrixXd::Identity(7,7);
-    K(0,0) = 100;
-    K(1,1) = 10;
-    K(2,2) = 1;
-
-    // Reference
-    DVector r(7);
-    r.setAll(0.00);
-    //r(1) = 1;
-
-    // Define ocp problem
     OCP ocp_problem(0.0, 1.0, 10);
-    //ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
-    //ocp_problem.minimizeLSQ(K, h, r);
-    ocp_problem.minimizeLSQ(h);
+    ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
+    //ocp_problem.minimizeLagrangeTerm(0.5 * (pose_error.transpose() * pose_error));
     ocp_problem.subjectTo(f);
 
     // Error bound
     //ocp_problem.subjectTo( index, DVector lb_, Expression exp_, DVector up_);
-    //ocp_problem.subjectTo( -0.06 <= pose_error(0) <= 0.06);
-    /*ocp_problem.subjectTo( -0.06 <= pose_error(1) <= 0.06);
+    ocp_problem.subjectTo( -0.06 <= pose_error(0) <= 0.06);
+    ocp_problem.subjectTo( -0.06 <= pose_error(1) <= 0.06);
     ocp_problem.subjectTo( -0.06 <= pose_error(2) <= 0.06);
     ocp_problem.subjectTo( -0.07 <= pose_error(3) <= 0.07);
     ocp_problem.subjectTo( -0.08 <= pose_error(4) <= 0.08);
     ocp_problem.subjectTo( -0.09 <= pose_error(5) <= 0.09);
-    ocp_problem.subjectTo( -0.1 <= pose_error(6) <= 0.1);*/
+    ocp_problem.subjectTo( -0.1 <= pose_error(6) <= 0.1);
 
-    RealTimeAlgorithm ocp_solver(ocp_problem, 0.025);
-    //OptimizationAlgorithm ocp_solver(ocp_problem);
+    OptimizationAlgorithm ocp_solver(ocp_problem);
 
-    ocp_solver.initializeParameters(pose_error_init);
+    //ocp_solver.initializeDifferentialStates(states_init);
     ocp_solver.initializeControls(control_init);
+    ocp_solver.initializeParameters(pose_error_init);
 
     // set solver option
     //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
@@ -437,69 +390,51 @@ void CobFrameTracker::solver()
     ocp_solver.set(KKT_TOLERANCE, 1.000000E-15);
     ocp_solver.set(MAX_NUM_ITERATIONS, 10);
     ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
-    //ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
-    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-8);
+    ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
+    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
 
-    //ocp_solver.solve();
-
-    //StaticReferenceTrajectory zeroReference("/home/bfb-ws/mpc_ws/src/frame_tracker/result/ref.txt");
+    ocp_solver.solve();
 
     ROS_WARN("Controller initialization start");
-    //Controller controller( ocp_solver, zeroReference);
-    Controller controller(ocp_solver);
 
-    //DVector diffState_init (m), param_init(7);
-    DVector diffState_init(6), controlState_init(7), error_state_init;
-    diffState_init.setAll(2.0); controlState_init.setAll(2.0); error_state_init.setAll(0.0);
-    //param_init.setAll(0.0);
-    //diffState_init(0) = 0.01;
-    controller.init(0.0, diffState_init, error_state_init );
-    //controller.init(0.0, diffState_init, error_state_init );
-    controller.step(0.0, diffState_init, error_state_init );
+    VariablesGrid control_ouput, state_output, error_param_output, cost_func_value;
+    ocp_solver.getDifferentialStates(state_output);
+    ocp_solver.getDifferentialStates("/home/bfb-ws/mpc_ws/src/frame_tracker/result/states.txt");
+    ocp_solver.getControls("/home/bfb-ws/mpc_ws/src/frame_tracker/result/controls.txt");
+    ocp_solver.getControls(control_ouput);
 
-    DVector controlled_joint_vel;
-//    controller.getU(controlled_joint_vel);
-    ROS_WARN_STREAM("U: \n"<<controlled_joint_vel);
+    //state_output.getVector(5).print();
+    control_ouput.getVector(5).print();
 
-    ROS_WARN("Controller initialization done...");
-
-	std_msgs::Float64MultiArray pub_data_joint_vel;
-
-//  DVector controlled_joint_vel;
+    DVector controlled_joint_vel = control_ouput.getVector(5);
+    //  DVector controlled_joint_vel;
 	// Convert DVector to geometry_msgs::TwistSt
+
+    std_msgs::Float64MultiArray pub_data_joint_vel;
+/*
     if (!controlled_joint_vel.isEmpty())
     {
-/*
-    	pub_data_joint_vel.data.push_back(controlled_joint_vel(0) * 4.0);
-        pub_data_joint_vel.data.push_back(controlled_joint_vel(1) * 4.0);
-        pub_data_joint_vel.data.push_back(controlled_joint_vel(2) * 4.0);
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(3) * 4.0);
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(4) * 4.0);
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(5) * 4.0);
-		pub_data_joint_vel.data.push_back(controlled_joint_vel(6) * 4.0);
-*/
-
-      	pub_data_joint_vel.data.push_back(2.0);
-      	pub_data_joint_vel.data.push_back(1.0);
-      	pub_data_joint_vel.data.push_back(1.0);
-      	pub_data_joint_vel.data.push_back(2.0);
-      	pub_data_joint_vel.data.push_back(1.5);
-      	pub_data_joint_vel.data.push_back(0.7);
-    	pub_data_joint_vel.data.push_back(1.0);
+    	pub_data_joint_vel.data.push_back(controlled_joint_vel(0));
+        pub_data_joint_vel.data.push_back(controlled_joint_vel(1));
+        pub_data_joint_vel.data.push_back(controlled_joint_vel(2));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(3));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(4));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(5));
+		pub_data_joint_vel.data.push_back(controlled_joint_vel(6));
 
     }
     else
     {
     	std::cout << "Empty joint velocity" << std::endl;
-    	pub_data_joint_vel.data.push_back(1.0);
-        pub_data_joint_vel.data.push_back(1.0);
-        pub_data_joint_vel.data.push_back(1.0);
-		pub_data_joint_vel.data.push_back(1.0);
-		pub_data_joint_vel.data.push_back(1.0);
-		pub_data_joint_vel.data.push_back(1.0);
-		pub_data_joint_vel.data.push_back(1.0);
+    	pub_data_joint_vel.data.push_back(0.0);
+        pub_data_joint_vel.data.push_back(0.0);
+        pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
+		pub_data_joint_vel.data.push_back(0.0);
 
-    }
+    }*/
 
     joint_vel_pub_.publish(pub_data_joint_vel);
 
