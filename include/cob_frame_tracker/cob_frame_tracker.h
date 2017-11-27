@@ -115,6 +115,8 @@ public:
     void solver(void);
     bool zeroTwist(void);
 
+    void frameTrackerCallBack(const geometry_msgs::Pose::ConstPtr& msg);
+
     /// Action interface
     void goalCB();
     void preemptCB();
@@ -163,7 +165,7 @@ private:
 
     tf::TransformListener tf_listener_;
 
-    ros::Subscriber jointstate_sub_;
+    ros::Subscriber jointstate_sub_, frame_tracker_sub_;
     ros::Publisher twist_pub_;
     ros::Publisher joint_vel_pub_;
 
