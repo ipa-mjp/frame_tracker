@@ -113,6 +113,7 @@ public:
     ///ACADO optimization solver
     //void solver(tf::StampedTransform transform_tf, geometry_msgs::TwistStamped& controlled_twist);
     void solver(void);
+    void hard_coded_solver();
     bool zeroTwist(void);
 
     void frameTrackerCallBack(const geometry_msgs::Pose::ConstPtr& msg);
@@ -221,6 +222,7 @@ private:
 
     ///Kinematic solver
     boost::shared_ptr<Kinematic_calculations> kinematic_solver_;
+    std_msgs::Float64MultiArray pub_data_joint_vel;
 };
 
 #endif

@@ -178,6 +178,8 @@ bool CobFrameTracker::initialize()
     as_->registerPreemptCallback(boost::bind(&CobFrameTracker::preemptCB, this));
     as_->start();
 
+    //this->hard_coded_solver();
+    //this->solver();
     timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
     timer_.start();
 
@@ -314,6 +316,49 @@ void CobFrameTracker::publishTwist(ros::Duration period, bool do_publish)
     }
 }
 
+void CobFrameTracker::hard_coded_solver()
+{
+	ROS_WARN("Hard coded solver");
+
+	DifferentialState x; // position
+	Control v;	// velocity
+
+	DifferentialEquation f;	// dynamic model
+	f << dot(x) == v;
+
+	// todo: how it solve
+	OCP ocp_problem(0.0, 1.0, 2);	// objective function want to minimize
+	ocp_problem.minimizeMayerTerm( (x - 0.05) * (x - 0.05) );
+	ocp_problem.subjectTo(f);
+
+	OptimizationAlgorithm alg(ocp_problem);
+
+	DVector c_init(1), s_init(1);
+	c_init.setAll(0.0);
+	s_init.setAll(0.0);
+
+	alg.initializeControls(c_init);
+	alg.initializeDifferentialStates(s_init);
+
+    // set solver option
+    //alg.set(INTEGRATOR_TYPE, INT_RK78);
+	//alg.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
+	//alg.set(DISCRETIZATION_TYPE, SINGLE_SHOOTING);
+	//alg.set(KKT_TOLERANCE, 1.000000E-6);
+	alg.set(MAX_NUM_ITERATIONS, 10);
+	//alg.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
+	//alg.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
+	alg.set(LEVENBERG_MARQUARDT, 1e-5);
+	//alg.set(GAUSS_NEWTON, 1e-5);
+
+	alg.solve();
+
+	VariablesGrid c_output;
+	alg.getControls(c_output);
+	c_output.print();
+}
+
+
 void CobFrameTracker::solver()
 {
 
@@ -325,24 +370,160 @@ void CobFrameTracker::solver()
     if (cart_distance_ == 0.00 || !success)
     	return;
 
+    //J_Mat.setIdentity();
+    //std::cout << J_Mat << std::endl;
+
     // get Jacobian matrix
     DMatrix jac_mat = J_Mat;
-    
-    const unsigned int m = jac_mat.rows();  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity 
-    const unsigned int n = jac_mat.cols();  // columns of jacobian matrix, number of joints(DOF) 
+
+   // const unsigned int m = jac_mat.rows();  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity
+   // const unsigned int n = jac_mat.cols();  // columns of jacobian matrix, number of joints(DOF)
+
+    const unsigned int m = 6;  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity
+    const unsigned int n = 7;
 
     //-----------------------------------------------------------------------------
-    DifferentialState x("",m,1);                // Use for end-effector velocity
-    //DifferentialState res_error("", 7,1);       // error vector of end-effector position
-    Control q_dot("",n,1);                      // Use for joint velocity
-    Parameter res_error("",7,1);
+    DifferentialState x("",m,1);                // position
+    Parameter e("",n,1);						// residual error
+    Control q_dot("",n,1);                      // velocity
 
     x.clearStaticCounters();
-    res_error.clearStaticCounters();
+    e.clearStaticCounters();
     q_dot.clearStaticCounters();
 
     DifferentialEquation f;             // Define differential equation
     f << dot(x) == jac_mat * q_dot;
+
+    OCP ocp_problem(0.0, 1.0, 20);
+    ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e) );
+    ocp_problem.subjectTo(f);
+
+    OptimizationAlgorithm alg(ocp_problem);
+
+	DVector c_init(7), s_init(6), p_init(7);
+	c_init.setAll(0.0);
+	//c_init(0) = 1.0;
+	c_init = pub_data_joint_vel.data;//last_q_dot_.data;
+
+	std::cout << "********** control initialize **********************" << std::endl;
+	std::cout << c_init << std::endl;
+
+	s_init.setAll(0.0);
+	// todo: initalize end-effector pose using fk
+	//s_init = last_q_.data;
+	//std::cout << "********** state initialize **********************" << std::endl;
+	//std::cout << s_init << std::endl;
+
+	p_init.setAll(0.0);
+	p_init(0) = transform_tf.getOrigin().x();
+	p_init(1) = transform_tf.getOrigin().y();
+	p_init(2) = transform_tf.getOrigin().z();
+	p_init(3) = transform_tf.getRotation().x();
+	p_init(4) = transform_tf.getRotation().y();
+	p_init(5) = transform_tf.getRotation().z();
+	p_init(6) = transform_tf.getRotation().w();
+	std::cout << "********** Error initialize **********************" << std::endl;
+	std::cout << p_init << std::endl;
+
+	alg.initializeControls(c_init);
+	alg.initializeDifferentialStates(s_init);
+	alg.initializeParameters(p_init);
+
+    alg.set(MAX_NUM_ITERATIONS, 10);
+    alg.set(LEVENBERG_MARQUARDT, 1e-5);
+
+    alg.solve();
+
+	VariablesGrid c_output, s_output, p_output;
+	alg.getDifferentialStates(s_output);
+	alg.getControls(c_output);
+	alg.getParameters(p_output);
+	std::cout << " ===============Control=========== " <<c_output.getDim()<<" ======================== " << std::endl;
+	c_output.getLastVector().print();
+	std::cout << " ===============State=========== " <<s_output.getDim()<<" ======================== " << std::endl;
+	s_output.getLastVector().print();
+	std::cout << " ===============Parameter=========== " <<p_output.getDim()<<" ======================== " << std::endl;
+	p_output.getLastVector().print();
+
+	DVector cnt_jnt_vel = c_output.getLastVector();
+
+	pub_data_joint_vel.data.clear();
+	pub_data_joint_vel.data.resize(7);
+
+	if (!cnt_jnt_vel.isEmpty())
+	{
+/*
+    	pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(0)) );
+        pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(1)) );
+        pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(2)) );
+		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(3)) );
+		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(4)) );
+		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(5)) );
+		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(6)) );*/
+
+    	pub_data_joint_vel.data[0] = ( double(cnt_jnt_vel(0)) );
+        pub_data_joint_vel.data[1] = ( double(cnt_jnt_vel(1)) );
+        pub_data_joint_vel.data[2] = ( double(cnt_jnt_vel(2)) );
+		pub_data_joint_vel.data[3] = ( double(cnt_jnt_vel(3)) );
+		pub_data_joint_vel.data[4] = ( double(cnt_jnt_vel(4)) );
+		pub_data_joint_vel.data[5] = ( double(cnt_jnt_vel(5)) );
+		pub_data_joint_vel.data[6] = ( double(cnt_jnt_vel(6)) );
+
+/*
+        //pub_data_joint_vel.data.push_back(1.0);
+      	pub_data_joint_vel.data.push_back(0.0);
+      	pub_data_joint_vel.data.push_back(0.0);
+      	pub_data_joint_vel.data.push_back(0.0);
+      	pub_data_joint_vel.data.push_back(0.0);
+      	pub_data_joint_vel.data.push_back(0.0);
+    	pub_data_joint_vel.data.push_back(0.0);
+*/
+	}
+    else
+    {
+    	std::cout << "Empty joint velocity" << std::endl;
+    	pub_data_joint_vel.data[0] = (0.0);
+        pub_data_joint_vel.data[1] = (0.0);
+        pub_data_joint_vel.data[2] = (0.0);
+		pub_data_joint_vel.data[3] = (0.0);
+		pub_data_joint_vel.data[4] = (0.0);
+		pub_data_joint_vel.data[5] = (0.0);
+		pub_data_joint_vel.data[6] = (0.0);
+
+    }
+
+    joint_vel_pub_.publish(pub_data_joint_vel);
+
+/*
+    //-----------------------------------------------------------------------------
+    // OCP problem definition
+    ROS_INFO(" Define ocp problem ... ");
+    OCP ocp_problem(0.0, 1.0, 10);
+    //ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
+    //ocp_problem.minimizeLagrangeTerm(0.5 * (res_error.transpose() * res_error));
+  ********  /ocp_problem.minimizeMayerTerm((  0.5 *	(transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) +
+    							   			(transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) +
+    							   			(transform_tf.getOrigin().z()*transform_tf.getOrigin().z()) +
+    							   			(transform_tf.getRotation().x()*transform_tf.getRotation().x()) +
+    							   			(transform_tf.getRotation().y()*transform_tf.getRotation().y()) +
+    							   			(transform_tf.getRotation().z()*transform_tf.getRotation().z()) +
+    							   			(transform_tf.getRotation().w()*transform_tf.getRotation().w()) )
+    							   );**********
+
+    ocp_problem.minimizeMayerTerm((  transform_tf.getOrigin().x() +
+        							 transform_tf.getOrigin().y() +
+        							 transform_tf.getOrigin().z() +
+        							 transform_tf.getRotation().x() +
+        							 transform_tf.getRotation().y() +
+        							 transform_tf.getRotation().z() +
+        							 transform_tf.getRotation().w())
+        							   );
+    ocp_problem.subjectTo(f);
+
+    //-----------------------------------------------------------------------------
+    // OCP Algorithm definition
+    ROS_INFO(" Define ocp algorithm ... ");
+    OptimizationAlgorithm ocp_solver(ocp_problem);
 
     // initialize pose error, controls and states
     DVector res_error_init(7), control_init(n);
@@ -358,23 +539,9 @@ void CobFrameTracker::solver()
     control_init.setAll(0.0);
     control_init = last_q_dot_.data;
 
-    //-----------------------------------------------------------------------------
-    // OCP problem definition
-    ROS_INFO(" Define ocp problem ... ");
-    OCP ocp_problem(0.0, 1.0, 10);
-    //ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
-    //ocp_problem.minimizeLagrangeTerm(0.5 * (res_error.transpose() * res_error));
-    ocp_problem.minimizeMayerTerm(0.5 * (res_error.transpose() * res_error));
-    ocp_problem.subjectTo(f);
-
-    //-----------------------------------------------------------------------------
-    // OCP Algorithm definition
-    ROS_INFO(" Define ocp algorithm ... ");
-    OptimizationAlgorithm ocp_solver(ocp_problem);
-
     //ocp_solver.initializeDifferentialStates(res_error_init);
     ocp_solver.initializeControls(control_init);
-    ocp_solver.initializeParameters(res_error_init);
+    //ocp_solver.initializeParameters(res_error_init);
 
     // set solver option
     //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
@@ -385,6 +552,7 @@ void CobFrameTracker::solver()
     ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
     ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
     ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
+
     ocp_solver.solve();
 
     ROS_WARN(" Let's try to print states, controls ... ");
@@ -397,6 +565,7 @@ void CobFrameTracker::solver()
     control_ouput.getVector(5).print();
 
     ROS_WARN("OCP Solved!!");
+    */
 }
 
 
