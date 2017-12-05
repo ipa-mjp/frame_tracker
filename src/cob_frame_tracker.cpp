@@ -179,9 +179,19 @@ bool CobFrameTracker::initialize()
     as_->start();
 
     //this->hard_coded_solver();
-    //this->solver();
-    timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
-    timer_.start();
+    this->solver();
+    //timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
+    //timer_.start();
+
+    pub_data_joint_vel.data.resize(7, 0.0);
+    pub_data_joint_vel.data[0] = (last_q_dot_.data(0));
+    pub_data_joint_vel.data[1] = (last_q_dot_.data(1));
+    pub_data_joint_vel.data[2] = (last_q_dot_.data(2));
+    pub_data_joint_vel.data[3] = (last_q_dot_.data(3));
+    pub_data_joint_vel.data[4] = (last_q_dot_.data(4));
+    pub_data_joint_vel.data[5] = (last_q_dot_.data(5));
+    pub_data_joint_vel.data[6] = (last_q_dot_.data(6));
+    //pub_data_joint_vel.data = last_q_dot_.data;
 
     ROS_INFO(" ======================= CobFrameTracker ... initialized! ==================== ");
 
@@ -365,13 +375,13 @@ void CobFrameTracker::solver()
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
 
     tf::StampedTransform transform_tf;
-    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
-    cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
-    if (cart_distance_ == 0.00 || !success)
-    	return;
+    bool success = this->getTransform(tracking_frame_, "arm_7_link", transform_tf);
+    //cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
+    //if (cart_distance_ == 0.00 || !success)
+    //	return;
 
-    //J_Mat.setIdentity();
-    //std::cout << J_Mat << std::endl;
+    J_Mat.setIdentity();
+    std::cout << J_Mat << std::endl;
 
     // get Jacobian matrix
     DMatrix jac_mat = J_Mat;
@@ -394,7 +404,7 @@ void CobFrameTracker::solver()
     DifferentialEquation f;             // Define differential equation
     f << dot(x) == jac_mat * q_dot;
 
-    OCP ocp_problem(0.0, 1.0, 20);
+    OCP ocp_problem(0.0, 1.0, 2);
     ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e) );
     ocp_problem.subjectTo(f);
 
@@ -403,7 +413,8 @@ void CobFrameTracker::solver()
 	DVector c_init(7), s_init(6), p_init(7);
 	c_init.setAll(0.0);
 	//c_init(0) = 1.0;
-	c_init = pub_data_joint_vel.data;//last_q_dot_.data;
+	//c_init = pub_data_joint_vel.data;//last_q_dot_.data;
+	//c_init = last_q_dot_.data;
 
 	std::cout << "********** control initialize **********************" << std::endl;
 	std::cout << c_init << std::endl;
@@ -415,13 +426,14 @@ void CobFrameTracker::solver()
 	//std::cout << s_init << std::endl;
 
 	p_init.setAll(0.0);
-	p_init(0) = transform_tf.getOrigin().x();
+	p_init(0) = 10.0;
+	/*p_init(0) = transform_tf.getOrigin().x();
 	p_init(1) = transform_tf.getOrigin().y();
 	p_init(2) = transform_tf.getOrigin().z();
 	p_init(3) = transform_tf.getRotation().x();
 	p_init(4) = transform_tf.getRotation().y();
 	p_init(5) = transform_tf.getRotation().z();
-	p_init(6) = transform_tf.getRotation().w();
+	p_init(6) = transform_tf.getRotation().w();*/
 	std::cout << "********** Error initialize **********************" << std::endl;
 	std::cout << p_init << std::endl;
 
@@ -447,19 +459,22 @@ void CobFrameTracker::solver()
 
 	DVector cnt_jnt_vel = c_output.getLastVector();
 
-	pub_data_joint_vel.data.clear();
+
+/*
+	std_msgs::Float64MultiArray pub_data_joint_vel;
+	//pub_data_joint_vel.data.clear();
 	pub_data_joint_vel.data.resize(7);
 
 	if (!cnt_jnt_vel.isEmpty())
 	{
-/*
+************
     	pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(0)) );
         pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(1)) );
         pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(2)) );
 		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(3)) );
 		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(4)) );
 		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(5)) );
-		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(6)) );*/
+		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(6)) );**************
 
     	pub_data_joint_vel.data[0] = ( double(cnt_jnt_vel(0)) );
         pub_data_joint_vel.data[1] = ( double(cnt_jnt_vel(1)) );
@@ -469,7 +484,7 @@ void CobFrameTracker::solver()
 		pub_data_joint_vel.data[5] = ( double(cnt_jnt_vel(5)) );
 		pub_data_joint_vel.data[6] = ( double(cnt_jnt_vel(6)) );
 
-/*
+*************
         //pub_data_joint_vel.data.push_back(1.0);
       	pub_data_joint_vel.data.push_back(0.0);
       	pub_data_joint_vel.data.push_back(0.0);
@@ -477,7 +492,7 @@ void CobFrameTracker::solver()
       	pub_data_joint_vel.data.push_back(0.0);
       	pub_data_joint_vel.data.push_back(0.0);
     	pub_data_joint_vel.data.push_back(0.0);
-*/
+*********
 	}
     else
     {
@@ -492,8 +507,8 @@ void CobFrameTracker::solver()
 
     }
 
-    joint_vel_pub_.publish(pub_data_joint_vel);
-
+    //joint_vel_pub_.publish(pub_data_joint_vel);
+*/
 /*
     //-----------------------------------------------------------------------------
     // OCP problem definition
