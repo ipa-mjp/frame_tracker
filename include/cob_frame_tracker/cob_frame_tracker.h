@@ -53,6 +53,7 @@
 #include <kdl_parser/kdl_parser.hpp>
 #include <kdl/chainiksolvervel_pinv.hpp>
 #include <kdl/chainfksolvervel_recursive.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
 #include <kdl/frames.hpp>
 #include <kdl/jntarray.hpp>
 #include <kdl/jntarrayvel.hpp>
@@ -159,10 +160,12 @@ private:
     /// KDL Conversion
     KDL::Chain chain_;
     KDL::JntArray last_q_;
+    KDL::JntArray lase_pose_;	// position and rpy of endeffector
     KDL::JntArray last_q_dot_;
     Eigen::Matrix<double, 6, 7>  J_Mat;
     boost::shared_ptr<KDL::ChainFkSolverVel_recursive> jntToCartSolver_vel_;
     boost::shared_ptr<KDL::ChainJntToJacSolver> jntToJacSolver_;
+    boost::shared_ptr<KDL::ChainFkSolverPos_recursive> jntToCartSolver_pos_;
 
     tf::TransformListener tf_listener_;
 
@@ -223,6 +226,7 @@ private:
     ///Kinematic solver
     boost::shared_ptr<Kinematic_calculations> kinematic_solver_;
     std_msgs::Float64MultiArray pub_data_joint_vel;
+
 };
 
 #endif
