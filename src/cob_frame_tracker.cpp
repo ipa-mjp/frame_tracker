@@ -95,6 +95,7 @@ bool CobFrameTracker::initialize()
 
     // initialize variables and current joint values and velocities
     dof_ = chain_.getNrOfJoints();
+    lase_pose_ = KDL::JntArray(7);
     last_q_ = KDL::JntArray(dof_);
     last_q_dot_ = KDL::JntArray(dof_);
 
@@ -179,11 +180,8 @@ bool CobFrameTracker::initialize()
     as_->start();
 
     //this->hard_coded_solver();
-    this->solver();
-    //timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
-    //timer_.start();
 
-    pub_data_joint_vel.data.resize(7, 0.0);
+    pub_data_joint_vel.data.resize(7, 1.0);
     pub_data_joint_vel.data[0] = (last_q_dot_.data(0));
     pub_data_joint_vel.data[1] = (last_q_dot_.data(1));
     pub_data_joint_vel.data[2] = (last_q_dot_.data(2));
@@ -191,7 +189,14 @@ bool CobFrameTracker::initialize()
     pub_data_joint_vel.data[4] = (last_q_dot_.data(4));
     pub_data_joint_vel.data[5] = (last_q_dot_.data(5));
     pub_data_joint_vel.data[6] = (last_q_dot_.data(6));
+
+    timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
+    timer_.start();
+
+
     //pub_data_joint_vel.data = last_q_dot_.data;
+
+    //this->solver();
 
     ROS_INFO(" ======================= CobFrameTracker ... initialized! ==================== ");
 
@@ -375,12 +380,12 @@ void CobFrameTracker::solver()
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
 
     tf::StampedTransform transform_tf;
-    bool success = this->getTransform(tracking_frame_, "arm_7_link", transform_tf);
-    //cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
-    //if (cart_distance_ == 0.00 || !success)
-    //	return;
+    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
+    cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
+    if (cart_distance_ == 0.00 || !success)
+    	return;
 
-    J_Mat.setIdentity();
+    //J_Mat.setIdentity();
     std::cout << J_Mat << std::endl;
 
     // get Jacobian matrix
@@ -411,33 +416,35 @@ void CobFrameTracker::solver()
     OptimizationAlgorithm alg(ocp_problem);
 
 	DVector c_init(7), s_init(6), p_init(7);
-	c_init.setAll(0.0);
+	c_init.setAll(0.01);
 	//c_init(0) = 1.0;
 	//c_init = pub_data_joint_vel.data;//last_q_dot_.data;
 	//c_init = last_q_dot_.data;
 
 	std::cout << "********** control initialize **********************" << std::endl;
 	std::cout << c_init << std::endl;
+	std::cout << "********** read from parameter server **********************" << std::endl;
+	std::cout << pub_data_joint_vel.data << std::endl;
 
 	s_init.setAll(0.0);
 	// todo: initalize end-effector pose using fk
-	//s_init = last_q_.data;
+	s_init = last_q_.data;
 	//std::cout << "********** state initialize **********************" << std::endl;
 	//std::cout << s_init << std::endl;
 
 	p_init.setAll(0.0);
-	p_init(0) = 10.0;
-	/*p_init(0) = transform_tf.getOrigin().x();
+	//p_init(0) = 10.0;
+	p_init(0) = transform_tf.getOrigin().x();
 	p_init(1) = transform_tf.getOrigin().y();
 	p_init(2) = transform_tf.getOrigin().z();
 	p_init(3) = transform_tf.getRotation().x();
 	p_init(4) = transform_tf.getRotation().y();
 	p_init(5) = transform_tf.getRotation().z();
-	p_init(6) = transform_tf.getRotation().w();*/
+	p_init(6) = transform_tf.getRotation().w();
 	std::cout << "********** Error initialize **********************" << std::endl;
 	std::cout << p_init << std::endl;
 
-	alg.initializeControls(c_init);
+	//alg.initializeControls(c_init);
 	alg.initializeDifferentialStates(s_init);
 	alg.initializeParameters(p_init);
 
@@ -458,7 +465,15 @@ void CobFrameTracker::solver()
 	p_output.getLastVector().print();
 
 	DVector cnt_jnt_vel = c_output.getLastVector();
+	pub_data_joint_vel.data.resize(7);
 
+	pub_data_joint_vel.data[0] = ( double(cnt_jnt_vel(0)) );
+    pub_data_joint_vel.data[1] = ( double(cnt_jnt_vel(1)) );
+    pub_data_joint_vel.data[2] = ( double(cnt_jnt_vel(2)) );
+	pub_data_joint_vel.data[3] = ( double(cnt_jnt_vel(3)) );
+	pub_data_joint_vel.data[4] = ( double(cnt_jnt_vel(4)) );
+	pub_data_joint_vel.data[5] = ( double(cnt_jnt_vel(5)) );
+	pub_data_joint_vel.data[6] = ( double(cnt_jnt_vel(6)) );
 
 /*
 	std_msgs::Float64MultiArray pub_data_joint_vel;
@@ -974,6 +989,17 @@ void CobFrameTracker::jointstateCallback(const sensor_msgs::JointState::ConstPtr
         {
             ROS_ERROR("ChainFkSolverVel failed!");
         }
+        ///--------------------------------------------------------------------
+        /// Forward Kinematic
+        jntToCartSolver_pos_.reset(new KDL::ChainFkSolverPos_recursive(chain_));
+        KDL::Frame FramePos;	//end-effector pos
+        unsigned int pose_solver_state = jntToCartSolver_pos_->JntToCart(last_q_, FramePos);
+
+        double qx, qy, qz, qw;
+        FramePos.M.GetQuaternion(qx, qy, qz, qw);
+        lase_pose_(0) = FramePos.p.x();	lase_pose_(1) = FramePos.p.y();	lase_pose_(2) = FramePos.p.z();	//position
+        lase_pose_(3) = qx;	lase_pose_(4) = qy;	lase_pose_(5) = qz;	lase_pose_(6) = qw;	// Quaternion
+
         ///---------------------------------------------------------------------
         /// JAcobian calculation
         jntToJacSolver_.reset(new KDL::ChainJntToJacSolver(chain_));
