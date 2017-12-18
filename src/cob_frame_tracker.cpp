@@ -444,7 +444,9 @@ void CobFrameTracker::solver()
 
     ocp_problem.subjectTo(f);
 
-    OptimizationAlgorithm alg(ocp_problem);
+    //OptimizationAlgorithm alg(ocp_problem);
+
+    RealTimeAlgorithm alg(ocp_problem, 0.025);
 
 	DVector c_init(7), s_init(6);
 	c_init.setAll(0.00);
@@ -466,18 +468,27 @@ void CobFrameTracker::solver()
 
     alg.set(MAX_NUM_ITERATIONS, 10);
     alg.set(LEVENBERG_MARQUARDT, 1e-5);
+    alg.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
 
-    alg.solve();
+    //alg.solve();
+    DVector diff_control_State_init(6);
+    diff_control_State_init.setAll(2.0);
+
+    Controller controller(alg);
+    controller.init(0.0, diff_control_State_init);
+    controller.step(0.0, diff_control_State_init);
 
 	VariablesGrid c_output;
 	alg.getControls(c_output);
 	//c_output.print();
 
 	ROS_WARN("***************** First control vector: ****************** ");
-	DVector cnt_jnt_vel = c_output.getFirstVector();
+	//DVector cnt_jnt_vel = c_output.getFirstVector();
+	DVector cnt_jnt_vel;
+	controller.getU(cnt_jnt_vel);
 	cnt_jnt_vel.print();
-	ROS_ERROR_STREAM("Size of control vector: "<< c_output.getFirstVector().getDim());
-	ROS_ERROR_STREAM("Size of last control vector: "<< c_output.getLastVector().getDim());
+	//ROS_ERROR_STREAM("Size of control vector: "<< c_output.getFirstVector().getDim());
+	//ROS_ERROR_STREAM("Size of last control vector: "<< c_output.getLastVector().getDim());
 
 
 	double error = transform_tf.getOrigin().x() + transform_tf.getOrigin().y() + transform_tf.getOrigin().z() + transform_tf.getRotation().x() + transform_tf.getRotation().y() + transform_tf.getRotation().z() + transform_tf.getRotation().w();
@@ -489,7 +500,7 @@ void CobFrameTracker::solver()
 			<< "***********************"
 			<< "\033[0m\n" << std::endl;
 
-
+/*
 	if(error < 0.01)
 	{
 		pub_data_joint_vel.data.resize(7);
@@ -505,7 +516,7 @@ void CobFrameTracker::solver()
 
 	}
 	else
-	{
+	{*/
 		pub_data_joint_vel.data.resize(7);
 		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
 		pub_data_joint_vel.data[0] = cnt_jnt_vel(0);
@@ -516,7 +527,7 @@ void CobFrameTracker::solver()
 		pub_data_joint_vel.data[5] = cnt_jnt_vel(5);
 		pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
 		joint_vel_pub_.publish(pub_data_joint_vel);
-	}
+	//}
 }
 void CobFrameTracker::publishHoldJointState(const ros::Duration& period)
 {
