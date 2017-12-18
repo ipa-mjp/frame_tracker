@@ -394,7 +394,7 @@ void CobFrameTracker::solver()
 
     tf::StampedTransform transform_tf, target_frame_TO_root_frame;
     bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf); //target_frame_
-    bool success1 = this->getTransform("/world", target_frame_, target_frame_TO_root_frame); //target_frame_
+    bool success1 = this->getTransform("/arm_podest_link", target_frame_, target_frame_TO_root_frame); //target_frame_
 
     ROS_WARN_STREAM("*************** target_frame_TO_root_frame: "<< target_frame_TO_root_frame.getOrigin().x()<<"  " << target_frame_TO_root_frame.getOrigin().y()
     																<<"  "<<target_frame_TO_root_frame.getOrigin().z());
@@ -432,22 +432,22 @@ void CobFrameTracker::solver()
 
 
     OCP ocp_problem(0.0, 1.0, 5);
-    /*ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
+    ocp_problem.minimizeMayerTerm( 1.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
     							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
-    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) )+
-    							   ( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
+    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) ) //+
+    							   /*( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
     							   ( (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y())  * (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y()) ) +
-    							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) )
-    							   ));*/
+    							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) )*/
+    							   ));
+    //ocp_problem.minimizeMayerTerm(10.0* v.transpose() * v);
     //ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e ) );
     //ocp_problem.minimizeMayerTerm( 100.0*((transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) + (transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) + (transform_tf.getOrigin().z()*transform_tf.getOrigin().z())) );
-    ocp_problem.minimizeMayerTerm( 10.0*( ( (x(0) - 0.39824) *(x(0)-0.39824) ) + ( (x(1) +0.30408) *(x(1)+0.30408) ) + ( (x(2) - 0.28162) *(x(2)-0.28162) )) );
+    //ocp_problem.minimizeMayerTerm( 10.0*( ( (x(0) - 0.39824) *(x(0)-0.39824) ) + ( (x(1) +0.30408) *(x(1)+0.30408) ) + ( (x(2) - 0.28162) *(x(2)-0.28162) )) );
     //ocp_problem.minimizeMayerTerm( 10.0*( ( (x(0) - 0) *(x(0)-0) ) + ( (x(1) +0.28298) *(x(1)+0.28298) ) + ( (x(2) - 0.0) *(x(2)-0.0) )) );
     //ocp_problem.minimizeMayerTerm( ( (x(2) - 0.01) *(x(2)-0.01) ) );
 
     ocp_problem.subjectTo(f);
-    //ocp_problem.subjectTo(-0.50 <= v <= 0.50);
-
+    ocp_problem.subjectTo(-0.50 <= v <= 0.50);
 
     //OptimizationAlgorithm alg(ocp_problem);
 
@@ -495,6 +495,14 @@ void CobFrameTracker::solver()
 
 	VariablesGrid c_output;
 	alg.getControls(c_output);
+	alg.getControls("/home/bfb-ws/mpc_ws/src/frame_tracker/result/control_csv.csv");
+
+
+	std::ofstream myfile;
+	myfile.open("/home/bfb-ws/mpc_ws/src/frame_tracker/result/control_output.csv", std::ios::out | std::ios::app | std::ios::binary);
+	myfile << c_output;
+	myfile << "\n.\n";
+
 	//c_output.print();
 
 	ROS_WARN("***************** First control vector: ****************** ");
