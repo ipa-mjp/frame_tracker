@@ -440,8 +440,6 @@ void CobFrameTracker::solver()
 	//c_init = last_q_dot_.data;
 	c_init = pub_data_joint_vel.data;
 
-	DVector er = 10.0 * c_init.transpose() * c_init;
-
     OCP ocp_problem(0.0, 1.0, 4);
     ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
     							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
@@ -461,10 +459,7 @@ void CobFrameTracker::solver()
     ocp_problem.subjectTo(-0.50 <= v <= 0.50);
 
     //OptimizationAlgorithm alg(ocp_problem);
-    ROS_ERROR_STREAM(ocp_problem.getNumberOfMayerTerms());
     RealTimeAlgorithm alg(ocp_problem, 0.025);
-
-
 
 	//alg << window;
 
@@ -479,6 +474,7 @@ void CobFrameTracker::solver()
     alg.set(MAX_NUM_ITERATIONS, 10);
     alg.set(LEVENBERG_MARQUARDT, 1e-5);
     alg.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
+    //alg.set( DISCRETIZATION_TYPE, COLLOCATION);
     alg.set( DISCRETIZATION_TYPE, COLLOCATION);
     alg.set(KKT_TOLERANCE, 1.000000E-06);
 
