@@ -430,19 +430,22 @@ void CobFrameTracker::solver()
 
 
 
-    OCP ocp_problem(0.0, 1.0, 2);
-    ocp_problem.minimizeMayerTerm( ( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
+    OCP ocp_problem(0.0, 1.0, 5);
+    ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
     							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
-    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) ) +
+    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) )+
     							   ( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
     							   ( (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y())  * (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y()) ) +
-    							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) ) );
+    							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) )
+    							   ));
     //ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e ) );
     //ocp_problem.minimizeMayerTerm( 100.0*((transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) + (transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) + (transform_tf.getOrigin().z()*transform_tf.getOrigin().z())) );
     //ocp_problem.minimizeMayerTerm( ( (x(1) - 0.05) *(x(1)-0.05) ) );
     //ocp_problem.minimizeMayerTerm( ( (x(2) - 0.01) *(x(2)-0.01) ) );
 
     ocp_problem.subjectTo(f);
+    ocp_problem.subjectTo(-0.50 <= v <= 0.50);
+
 
     //OptimizationAlgorithm alg(ocp_problem);
 
@@ -466,17 +469,17 @@ void CobFrameTracker::solver()
 	alg.initializeControls(c_init);
 	alg.initializeDifferentialStates(s_init);
 
-    alg.set(MAX_NUM_ITERATIONS, 10);
+    alg.set(MAX_NUM_ITERATIONS, 5);
     alg.set(LEVENBERG_MARQUARDT, 1e-5);
     alg.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
 
     //alg.solve();
     DVector diff_control_State_init(6);
-    diff_control_State_init.setAll(2.0);
+    diff_control_State_init.setAll(0.0);
 
     Controller controller(alg);
-    controller.init(0.0, diff_control_State_init);
-    controller.step(0.0, diff_control_State_init);
+    controller.init(0.0, s_init);
+    controller.step(0.0, s_init);
 
 	VariablesGrid c_output;
 	alg.getControls(c_output);
