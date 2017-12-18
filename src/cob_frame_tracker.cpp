@@ -41,6 +41,9 @@
 #include <kdl/jntarray.hpp>
 #include <kdl/jntarrayvel.hpp>
 
+#include <iostream>
+#include <fstream>
+
 bool CobFrameTracker::initialize()
 {
     ros::NodeHandle nh_;
@@ -195,8 +198,6 @@ bool CobFrameTracker::initialize()
     //this->hard_coded_solver();
 
     //pub_data_joint_vel.data = last_q_dot_.data;
-
-    //this->solver();
 
     ROS_INFO(" ======================= CobFrameTracker ... initialized! ==================== ");
 
@@ -431,20 +432,21 @@ void CobFrameTracker::solver()
 
 
     OCP ocp_problem(0.0, 1.0, 5);
-    ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
+    /*ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
     							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
     							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) )+
     							   ( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
     							   ( (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y())  * (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y()) ) +
     							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) )
-    							   ));
+    							   ));*/
     //ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e ) );
     //ocp_problem.minimizeMayerTerm( 100.0*((transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) + (transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) + (transform_tf.getOrigin().z()*transform_tf.getOrigin().z())) );
-    //ocp_problem.minimizeMayerTerm( ( (x(1) - 0.05) *(x(1)-0.05) ) );
+    ocp_problem.minimizeMayerTerm( 10.0*( ( (x(0) - 0.39824) *(x(0)-0.39824) ) + ( (x(1) +0.30408) *(x(1)+0.30408) ) + ( (x(2) - 0.28162) *(x(2)-0.28162) )) );
+    //ocp_problem.minimizeMayerTerm( 10.0*( ( (x(0) - 0) *(x(0)-0) ) + ( (x(1) +0.28298) *(x(1)+0.28298) ) + ( (x(2) - 0.0) *(x(2)-0.0) )) );
     //ocp_problem.minimizeMayerTerm( ( (x(2) - 0.01) *(x(2)-0.01) ) );
 
     ocp_problem.subjectTo(f);
-    ocp_problem.subjectTo(-0.50 <= v <= 0.50);
+    //ocp_problem.subjectTo(-0.50 <= v <= 0.50);
 
 
     //OptimizationAlgorithm alg(ocp_problem);
@@ -461,6 +463,8 @@ void CobFrameTracker::solver()
 	//c_init = last_q_dot_.data;
 	c_init = pub_data_joint_vel.data;
 
+	//alg << window;
+
 	//ROS_WARN_STREAM("*************** pose error of end-effector: "<< transform_tf.getOrigin().x()<<"  " << transform_tf.getOrigin().y()
 																//<<"  "<<transform_tf.getOrigin().z()	<< "\n orirnt: \n" << transform_tf.getRotation());
 
@@ -472,12 +476,20 @@ void CobFrameTracker::solver()
     alg.set(MAX_NUM_ITERATIONS, 5);
     alg.set(LEVENBERG_MARQUARDT, 1e-5);
     alg.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
+    alg.set( DISCRETIZATION_TYPE, COLLOCATION);
+
+/*    alg.set( DISCRETIZATION_TYPE, MULTIPLE_SHOOTING );
+    alg.set( 'SPARSE_QP_SOLUTION',          FULL_CONDENSING_N2');
+    alg.set( 'INTEGRATOR_TYPE',             'INT_IRK_GL4'       );
+    alg.set( 'NUM_INTEGRATOR_STEPS',        2*N                 );*/
 
     //alg.solve();
     DVector diff_control_State_init(6);
     diff_control_State_init.setAll(0.0);
 
+
     Controller controller(alg);
+
     controller.init(0.0, s_init);
     controller.step(0.0, s_init);
 
@@ -493,8 +505,8 @@ void CobFrameTracker::solver()
 	//ROS_ERROR_STREAM("Size of control vector: "<< c_output.getFirstVector().getDim());
 	//ROS_ERROR_STREAM("Size of last control vector: "<< c_output.getLastVector().getDim());
 
-
 	double error = transform_tf.getOrigin().x() + transform_tf.getOrigin().y() + transform_tf.getOrigin().z() + transform_tf.getRotation().x() + transform_tf.getRotation().y() + transform_tf.getRotation().z() + transform_tf.getRotation().w();
+
 
   //print data on to console
 	std::cout<<"\033[36;1m" // green console colour
@@ -528,7 +540,7 @@ void CobFrameTracker::solver()
 		pub_data_joint_vel.data[3] = cnt_jnt_vel(3);
 		pub_data_joint_vel.data[4] = cnt_jnt_vel(4);
 		pub_data_joint_vel.data[5] = cnt_jnt_vel(5);
-		pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
+		//pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
 		joint_vel_pub_.publish(pub_data_joint_vel);
 	//}
 }
