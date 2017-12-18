@@ -396,8 +396,7 @@ void CobFrameTracker::solver()
     bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf); //target_frame_
     bool success1 = this->getTransform("/arm_podest_link", target_frame_, target_frame_TO_root_frame); //target_frame_
 
-    ROS_WARN_STREAM("*************** target_frame_TO_root_frame: "<< target_frame_TO_root_frame.getOrigin().x()<<"  " << target_frame_TO_root_frame.getOrigin().y()
-    																<<"  "<<target_frame_TO_root_frame.getOrigin().z());
+
 
     //J_Mat.setIdentity();
     //std::cout << J_Mat << std::endl;
@@ -429,17 +428,29 @@ void CobFrameTracker::solver()
     e_init(6) = target_frame_TO_root_frame.getRotation().w();
 */
 
+	DVector c_init(7), s_init(6);
+	c_init.setAll(0.00);
+	s_init.setAll(0.00);
 
+	std::cout << "*************** pose of end-effector: \n"<< lase_pose_.data << std::endl;
+    ROS_WARN_STREAM("*************** target_frame_TO_root_frame: "<< target_frame_TO_root_frame.getOrigin().x()<<"  " << target_frame_TO_root_frame.getOrigin().y()
+    																<<"  "<<target_frame_TO_root_frame.getOrigin().z());
+	//std::cout << "*************** control of end-effector: \n"<< pub_data_joint_vel.data << std::endl;
+	s_init = lase_pose_.data;
+	//c_init = last_q_dot_.data;
+	c_init = pub_data_joint_vel.data;
 
-    OCP ocp_problem(0.0, 1.0, 5);
-    ocp_problem.minimizeMayerTerm( 1.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
+	DVector er = 10.0 * c_init.transpose() * c_init;
+
+    OCP ocp_problem(0.0, 1.0, 4);
+    ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
     							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
-    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) ) //+
+    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) ) + (v.transpose()*v) //+
     							   /*( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
     							   ( (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y())  * (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y()) ) +
     							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) )*/
     							   ));
-    //ocp_problem.minimizeMayerTerm(10.0* v.transpose() * v);
+    //ocp_problem.minimizeMayerTerm(10.0 * v.transpose()*v);
     //ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e ) );
     //ocp_problem.minimizeMayerTerm( 100.0*((transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) + (transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) + (transform_tf.getOrigin().z()*transform_tf.getOrigin().z())) );
     //ocp_problem.minimizeMayerTerm( 10.0*( ( (x(0) - 0.39824) *(x(0)-0.39824) ) + ( (x(1) +0.30408) *(x(1)+0.30408) ) + ( (x(2) - 0.28162) *(x(2)-0.28162) )) );
@@ -450,18 +461,10 @@ void CobFrameTracker::solver()
     ocp_problem.subjectTo(-0.50 <= v <= 0.50);
 
     //OptimizationAlgorithm alg(ocp_problem);
-
+    ROS_ERROR_STREAM(ocp_problem.getNumberOfMayerTerms());
     RealTimeAlgorithm alg(ocp_problem, 0.025);
 
-	DVector c_init(7), s_init(6);
-	c_init.setAll(0.00);
-	s_init.setAll(0.00);
 
-	//std::cout << "*************** pose of end-effector: \n"<< lase_pose_.data << std::endl;
-	//std::cout << "*************** control of end-effector: \n"<< pub_data_joint_vel.data << std::endl;
-	s_init = lase_pose_.data;
-	//c_init = last_q_dot_.data;
-	c_init = pub_data_joint_vel.data;
 
 	//alg << window;
 
@@ -473,16 +476,22 @@ void CobFrameTracker::solver()
 	alg.initializeControls(c_init);
 	alg.initializeDifferentialStates(s_init);
 
-    alg.set(MAX_NUM_ITERATIONS, 5);
+    alg.set(MAX_NUM_ITERATIONS, 10);
     alg.set(LEVENBERG_MARQUARDT, 1e-5);
     alg.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
     alg.set( DISCRETIZATION_TYPE, COLLOCATION);
+    alg.set(KKT_TOLERANCE, 1.000000E-06);
 
 /*    alg.set( DISCRETIZATION_TYPE, MULTIPLE_SHOOTING );
     alg.set( 'SPARSE_QP_SOLUTION',          FULL_CONDENSING_N2');
     alg.set( 'INTEGRATOR_TYPE',             'INT_IRK_GL4'       );
     alg.set( 'NUM_INTEGRATOR_STEPS',        2*N                 );*/
-
+	std::cout<<"\033[20;1m" // green console colour
+			<< "***********************"<<std::endl
+			<< "objective function: " <<  alg.getObjectiveValue()
+			<< "***********************"
+			<< "\033[0m\n" << std::endl;
+	alg.getObjectiveValue("/home/bfb-ws/mpc_ws/src/frame_tracker/result/objective_func.txt");
     //alg.solve();
     DVector diff_control_State_init(6);
     diff_control_State_init.setAll(0.0);
