@@ -95,7 +95,7 @@ bool CobFrameTracker::initialize()
 
     // initialize variables and current joint values and velocities
     dof_ = chain_.getNrOfJoints();
-    lase_pose_ = KDL::JntArray(7);
+    lase_pose_ = KDL::JntArray(6);
     last_q_ = KDL::JntArray(dof_);
     last_q_dot_ = KDL::JntArray(dof_);
 
@@ -192,7 +192,7 @@ bool CobFrameTracker::initialize()
 
     timer_ = nh_.createTimer(ros::Duration(1/update_rate_), &CobFrameTracker::run, this);
     timer_.start();
-
+    //this->hard_coded_solver();
 
     //pub_data_joint_vel.data = last_q_dot_.data;
 
@@ -225,6 +225,7 @@ void CobFrameTracker::run(const ros::TimerEvent& event)
             {
                 // action still active - publish feedback
                 if (as_->isActive()) { as_->publishFeedback(action_feedback_); }
+                //solver();
             }
         }
         else  // tracking/lookat on service call
@@ -237,7 +238,7 @@ void CobFrameTracker::run(const ros::TimerEvent& event)
 
             ht_.hold = abortion_counter_ >= max_abortions_;  // only for service call in case of action ht_.hold = false. What to do with actions?
         }
-
+        //this->hard_coded_solver();
         solver();
         //publishTwist(period, !ht_.hold);  // if not publishing then just update data!
         //publishTwist(period, true);
@@ -371,6 +372,17 @@ void CobFrameTracker::hard_coded_solver()
 	VariablesGrid c_output;
 	alg.getControls(c_output);
 	c_output.print();
+
+	ROS_WARN("***************** Last control vector: ****************** ");
+	DVector cnt_jnt_vel = c_output.getLastVector();
+	cnt_jnt_vel.print();
+	ROS_ERROR_STREAM("Size of control vector: "<< c_output.getLastVector().getDim());
+
+	pub_data_joint_vel.data.resize(7);
+	pub_data_joint_vel.data[0] = cnt_jnt_vel(0);
+
+	joint_vel_pub_.publish(pub_data_joint_vel);
+
 }
 
 
@@ -379,225 +391,156 @@ void CobFrameTracker::solver()
 
     ROS_WARN("CobFrameTracker: Start solving ocp using ACADO Toolkit");
 
-    tf::StampedTransform transform_tf;
-    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
-    cart_distance_ = sqrt(pow(transform_tf.getOrigin().x(), 2) + pow(transform_tf.getOrigin().y(), 2) + pow(transform_tf.getOrigin().z(), 2));
-    if (cart_distance_ == 0.00 || !success)
-    	return;
+    tf::StampedTransform transform_tf, target_frame_TO_root_frame;
+    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf); //target_frame_
+    bool success1 = this->getTransform("/world", target_frame_, target_frame_TO_root_frame); //target_frame_
+
+    ROS_WARN_STREAM("*************** target_frame_TO_root_frame: "<< target_frame_TO_root_frame.getOrigin().x()<<"  " << target_frame_TO_root_frame.getOrigin().y()
+    																<<"  "<<target_frame_TO_root_frame.getOrigin().z());
 
     //J_Mat.setIdentity();
-    std::cout << J_Mat << std::endl;
+    //std::cout << J_Mat << std::endl;
 
     // get Jacobian matrix
     DMatrix jac_mat = J_Mat;
-
-   // const unsigned int m = jac_mat.rows();  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity
-   // const unsigned int n = jac_mat.cols();  // columns of jacobian matrix, number of joints(DOF)
 
     const unsigned int m = 6;  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity
     const unsigned int n = 7;
 
     //-----------------------------------------------------------------------------
     DifferentialState x("",m,1);                // position
-    Parameter e("",n,1);						// residual error
-    Control q_dot("",n,1);                      // velocity
+    Control v("",n,1);                      // velocity
 
     x.clearStaticCounters();
-    e.clearStaticCounters();
-    q_dot.clearStaticCounters();
+    v.clearStaticCounters();
 
     DifferentialEquation f;             // Define differential equation
-    f << dot(x) == jac_mat * q_dot;
+    f << dot(x) == jac_mat * v;
+/*
+    DVector e_init(7);
+    e_init.setAll(0.0);
+    e_init(0) = target_frame_TO_root_frame.getOrigin().x();
+    e_init(1) = target_frame_TO_root_frame.getOrigin().y();
+    e_init(2) = target_frame_TO_root_frame.getOrigin().z();
+    e_init(3) = target_frame_TO_root_frame.getRotation().x();
+    e_init(4) = target_frame_TO_root_frame.getRotation().y();
+    e_init(5) = target_frame_TO_root_frame.getRotation().z();
+    e_init(6) = target_frame_TO_root_frame.getRotation().w();
+*/
+
+
 
     OCP ocp_problem(0.0, 1.0, 2);
-    ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e) );
+    ocp_problem.minimizeMayerTerm( ( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
+    							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
+    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) ) +
+    							   ( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
+    							   ( (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y())  * (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y()) ) +
+    							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) ) );
+    //ocp_problem.minimizeMayerTerm( 10.0 * (e.transpose() * e ) );
+    //ocp_problem.minimizeMayerTerm( 100.0*((transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) + (transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) + (transform_tf.getOrigin().z()*transform_tf.getOrigin().z())) );
+    //ocp_problem.minimizeMayerTerm( ( (x(1) - 0.05) *(x(1)-0.05) ) );
+    //ocp_problem.minimizeMayerTerm( ( (x(2) - 0.01) *(x(2)-0.01) ) );
+
     ocp_problem.subjectTo(f);
 
     OptimizationAlgorithm alg(ocp_problem);
 
-	DVector c_init(7), s_init(6), p_init(7);
-	c_init.setAll(0.01);
-	//c_init(0) = 1.0;
-	//c_init = pub_data_joint_vel.data;//last_q_dot_.data;
+	DVector c_init(7), s_init(6);
+	c_init.setAll(0.00);
+	s_init.setAll(0.00);
+
+	//std::cout << "*************** pose of end-effector: \n"<< lase_pose_.data << std::endl;
+	//std::cout << "*************** control of end-effector: \n"<< pub_data_joint_vel.data << std::endl;
+	s_init = lase_pose_.data;
 	//c_init = last_q_dot_.data;
+	c_init = pub_data_joint_vel.data;
 
-	std::cout << "********** control initialize **********************" << std::endl;
-	std::cout << c_init << std::endl;
-	std::cout << "********** read from parameter server **********************" << std::endl;
-	std::cout << pub_data_joint_vel.data << std::endl;
+	//ROS_WARN_STREAM("*************** pose error of end-effector: "<< transform_tf.getOrigin().x()<<"  " << transform_tf.getOrigin().y()
+																//<<"  "<<transform_tf.getOrigin().z()	<< "\n orirnt: \n" << transform_tf.getRotation());
 
-	s_init.setAll(0.0);
-	// todo: initalize end-effector pose using fk
-	s_init = last_q_.data;
-	//std::cout << "********** state initialize **********************" << std::endl;
-	//std::cout << s_init << std::endl;
+	//std::cout << "*************** Error of end-effector: \n"<< e_init << std::endl;
 
-	p_init.setAll(0.0);
-	//p_init(0) = 10.0;
-	p_init(0) = transform_tf.getOrigin().x();
-	p_init(1) = transform_tf.getOrigin().y();
-	p_init(2) = transform_tf.getOrigin().z();
-	p_init(3) = transform_tf.getRotation().x();
-	p_init(4) = transform_tf.getRotation().y();
-	p_init(5) = transform_tf.getRotation().z();
-	p_init(6) = transform_tf.getRotation().w();
-	std::cout << "********** Error initialize **********************" << std::endl;
-	std::cout << p_init << std::endl;
-
-	//alg.initializeControls(c_init);
+	alg.initializeControls(c_init);
 	alg.initializeDifferentialStates(s_init);
-	alg.initializeParameters(p_init);
 
     alg.set(MAX_NUM_ITERATIONS, 10);
     alg.set(LEVENBERG_MARQUARDT, 1e-5);
 
     alg.solve();
 
-	VariablesGrid c_output, s_output, p_output;
-	alg.getDifferentialStates(s_output);
+	VariablesGrid c_output;
 	alg.getControls(c_output);
-	alg.getParameters(p_output);
-	std::cout << " ===============Control=========== " <<c_output.getDim()<<" ======================== " << std::endl;
-	c_output.getLastVector().print();
-	std::cout << " ===============State=========== " <<s_output.getDim()<<" ======================== " << std::endl;
-	s_output.getLastVector().print();
-	std::cout << " ===============Parameter=========== " <<p_output.getDim()<<" ======================== " << std::endl;
-	p_output.getLastVector().print();
+	//c_output.print();
 
-	DVector cnt_jnt_vel = c_output.getLastVector();
-	pub_data_joint_vel.data.resize(7);
+	ROS_WARN("***************** First control vector: ****************** ");
+	DVector cnt_jnt_vel = c_output.getFirstVector();
+	cnt_jnt_vel.print();
+	ROS_ERROR_STREAM("Size of control vector: "<< c_output.getFirstVector().getDim());
+	ROS_ERROR_STREAM("Size of last control vector: "<< c_output.getLastVector().getDim());
 
-	pub_data_joint_vel.data[0] = ( double(cnt_jnt_vel(0)) );
-    pub_data_joint_vel.data[1] = ( double(cnt_jnt_vel(1)) );
-    pub_data_joint_vel.data[2] = ( double(cnt_jnt_vel(2)) );
-	pub_data_joint_vel.data[3] = ( double(cnt_jnt_vel(3)) );
-	pub_data_joint_vel.data[4] = ( double(cnt_jnt_vel(4)) );
-	pub_data_joint_vel.data[5] = ( double(cnt_jnt_vel(5)) );
-	pub_data_joint_vel.data[6] = ( double(cnt_jnt_vel(6)) );
 
-/*
-	std_msgs::Float64MultiArray pub_data_joint_vel;
-	//pub_data_joint_vel.data.clear();
-	pub_data_joint_vel.data.resize(7);
+	double error = transform_tf.getOrigin().x() + transform_tf.getOrigin().y() + transform_tf.getOrigin().z() + transform_tf.getRotation().x() + transform_tf.getRotation().y() + transform_tf.getRotation().z() + transform_tf.getRotation().w();
 
-	if (!cnt_jnt_vel.isEmpty())
+  //print data on to console
+	std::cout<<"\033[36;1m" // green console colour
+			<< "***********************"<<std::endl
+			<< "residual error want to minimize: " << error
+			<< "***********************"
+			<< "\033[0m\n" << std::endl;
+
+
+	if(error < 0.01)
 	{
-************
-    	pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(0)) );
-        pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(1)) );
-        pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(2)) );
-		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(3)) );
-		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(4)) );
-		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(5)) );
-		pub_data_joint_vel.data.push_back( double(cnt_jnt_vel(6)) );**************
+		pub_data_joint_vel.data.resize(7);
+		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+		pub_data_joint_vel.data[0] = 0;
+		pub_data_joint_vel.data[1] = 0;
+		pub_data_joint_vel.data[2] = 0;
+		pub_data_joint_vel.data[3] = 0;
+		pub_data_joint_vel.data[4] = 0;
+		pub_data_joint_vel.data[5] = 0;
+		pub_data_joint_vel.data[6] = 0;
+		joint_vel_pub_.publish(pub_data_joint_vel);
 
-    	pub_data_joint_vel.data[0] = ( double(cnt_jnt_vel(0)) );
-        pub_data_joint_vel.data[1] = ( double(cnt_jnt_vel(1)) );
-        pub_data_joint_vel.data[2] = ( double(cnt_jnt_vel(2)) );
-		pub_data_joint_vel.data[3] = ( double(cnt_jnt_vel(3)) );
-		pub_data_joint_vel.data[4] = ( double(cnt_jnt_vel(4)) );
-		pub_data_joint_vel.data[5] = ( double(cnt_jnt_vel(5)) );
-		pub_data_joint_vel.data[6] = ( double(cnt_jnt_vel(6)) );
-
-*************
-        //pub_data_joint_vel.data.push_back(1.0);
-      	pub_data_joint_vel.data.push_back(0.0);
-      	pub_data_joint_vel.data.push_back(0.0);
-      	pub_data_joint_vel.data.push_back(0.0);
-      	pub_data_joint_vel.data.push_back(0.0);
-      	pub_data_joint_vel.data.push_back(0.0);
-    	pub_data_joint_vel.data.push_back(0.0);
-*********
 	}
-    else
-    {
-    	std::cout << "Empty joint velocity" << std::endl;
-    	pub_data_joint_vel.data[0] = (0.0);
-        pub_data_joint_vel.data[1] = (0.0);
-        pub_data_joint_vel.data[2] = (0.0);
-		pub_data_joint_vel.data[3] = (0.0);
-		pub_data_joint_vel.data[4] = (0.0);
-		pub_data_joint_vel.data[5] = (0.0);
-		pub_data_joint_vel.data[6] = (0.0);
-
-    }
-
-    //joint_vel_pub_.publish(pub_data_joint_vel);
-*/
-/*
-    //-----------------------------------------------------------------------------
-    // OCP problem definition
-    ROS_INFO(" Define ocp problem ... ");
-    OCP ocp_problem(0.0, 1.0, 10);
-    //ocp_problem.minimizeMayerTerm( 0.5 * (pose_error.transpose() * pose_error) );
-    //ocp_problem.minimizeLagrangeTerm(0.5 * (res_error.transpose() * res_error));
-  ********  /ocp_problem.minimizeMayerTerm((  0.5 *	(transform_tf.getOrigin().x()*transform_tf.getOrigin().x()) +
-    							   			(transform_tf.getOrigin().y()*transform_tf.getOrigin().y()) +
-    							   			(transform_tf.getOrigin().z()*transform_tf.getOrigin().z()) +
-    							   			(transform_tf.getRotation().x()*transform_tf.getRotation().x()) +
-    							   			(transform_tf.getRotation().y()*transform_tf.getRotation().y()) +
-    							   			(transform_tf.getRotation().z()*transform_tf.getRotation().z()) +
-    							   			(transform_tf.getRotation().w()*transform_tf.getRotation().w()) )
-    							   );**********
-
-    ocp_problem.minimizeMayerTerm((  transform_tf.getOrigin().x() +
-        							 transform_tf.getOrigin().y() +
-        							 transform_tf.getOrigin().z() +
-        							 transform_tf.getRotation().x() +
-        							 transform_tf.getRotation().y() +
-        							 transform_tf.getRotation().z() +
-        							 transform_tf.getRotation().w())
-        							   );
-    ocp_problem.subjectTo(f);
-
-    //-----------------------------------------------------------------------------
-    // OCP Algorithm definition
-    ROS_INFO(" Define ocp algorithm ... ");
-    OptimizationAlgorithm ocp_solver(ocp_problem);
-
-    // initialize pose error, controls and states
-    DVector res_error_init(7), control_init(n);
-    res_error_init.setAll(0.0);
-    res_error_init(0) = transform_tf.getOrigin().x();
-    res_error_init(1) = transform_tf.getOrigin().y();
-    res_error_init(2) = transform_tf.getOrigin().z();
-    res_error_init(3) = transform_tf.getRotation().x();
-    res_error_init(4) = transform_tf.getRotation().y();
-    res_error_init(5) = transform_tf.getRotation().z();
-    res_error_init(6) = transform_tf.getRotation().w();
-    //ROS_DEBUG_STREAM("Error Pose init: "<< pose_error_init);
-    control_init.setAll(0.0);
-    control_init = last_q_dot_.data;
-
-    //ocp_solver.initializeDifferentialStates(res_error_init);
-    ocp_solver.initializeControls(control_init);
-    //ocp_solver.initializeParameters(res_error_init);
-
-    // set solver option
-    //ocp_solver.set(INTEGRATOR_TYPE, INT_RK78);
-    ocp_solver.set(INTEGRATOR_TOLERANCE, 1.000000E-08);
-    ocp_solver.set(DISCRETIZATION_TYPE, MULTIPLE_SHOOTING);
-    ocp_solver.set(KKT_TOLERANCE, 1.000000E-15);
-    ocp_solver.set(MAX_NUM_ITERATIONS, 10);
-    ocp_solver.set( HESSIAN_APPROXIMATION, EXACT_HESSIAN );
-    ocp_solver.set( HESSIAN_PROJECTION_FACTOR, 2.0 );
-    ocp_solver.set(LEVENBERG_MARQUARDT, 1e-5);
-
-    ocp_solver.solve();
-
-    ROS_WARN(" Let's try to print states, controls ... ");
-    VariablesGrid control_ouput, state_output;
-    ocp_solver.getDifferentialStates(state_output);
-    ocp_solver.getDifferentialStates("/home/bfb-ws/mpc_ws/src/frame_tracker/result/states.txt");
-    ocp_solver.getControls("/home/bfb-ws/mpc_ws/src/frame_tracker/result/controls.txt");
-    ocp_solver.getControls(control_ouput);
-
-    control_ouput.getVector(5).print();
-
-    ROS_WARN("OCP Solved!!");
-    */
+	else
+	{
+		pub_data_joint_vel.data.resize(7);
+		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+		pub_data_joint_vel.data[0] = cnt_jnt_vel(0);
+		pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+		pub_data_joint_vel.data[2] = cnt_jnt_vel(2);
+		pub_data_joint_vel.data[3] = cnt_jnt_vel(3);
+		pub_data_joint_vel.data[4] = cnt_jnt_vel(4);
+		pub_data_joint_vel.data[5] = cnt_jnt_vel(5);
+		pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
+		joint_vel_pub_.publish(pub_data_joint_vel);
+	}
 }
+void CobFrameTracker::publishHoldJointState(const ros::Duration& period)
+{
+    tf::StampedTransform transform_tf;
+    bool success = this->getTransform(tracking_frame_, target_frame_, transform_tf);
 
+    double error = transform_tf.getOrigin().x() + transform_tf.getOrigin().y() + transform_tf.getOrigin().z() + transform_tf.getRotation().x() + transform_tf.getRotation().y() + transform_tf.getRotation().z() + transform_tf.getRotation().w();
+
+  //print data on to console
+	std::cout<<"\033[36;1m" << "***********************"<<std::endl << "residual error want to minimize: " << error<< "***********************"<< "\033[0m\n" << std::endl;
+
+
+	pub_data_joint_vel.data.resize(7);
+	//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+	pub_data_joint_vel.data[0] = 0;
+	pub_data_joint_vel.data[1] = 0;
+	pub_data_joint_vel.data[2] = 0;
+	pub_data_joint_vel.data[3] = 0;
+	pub_data_joint_vel.data[4] = 0;
+	pub_data_joint_vel.data[5] = 0;
+	pub_data_joint_vel.data[6] = 0;
+	joint_vel_pub_.publish(pub_data_joint_vel);
+
+}
 
 void CobFrameTracker::publishHoldTwist(const ros::Duration& period)
 {
@@ -955,6 +898,7 @@ int CobFrameTracker::checkServiceCallStatus()
 
 void CobFrameTracker::jointstateCallback(const sensor_msgs::JointState::ConstPtr& msg)
 {
+	//ROS_ERROR("///////////////////////// JointStateCB -------------------------------------");
     KDL::JntArray q_temp = last_q_;
     KDL::JntArray q_dot_temp = last_q_dot_;
     int count = 0;
@@ -995,11 +939,16 @@ void CobFrameTracker::jointstateCallback(const sensor_msgs::JointState::ConstPtr
         KDL::Frame FramePos;	//end-effector pos
         unsigned int pose_solver_state = jntToCartSolver_pos_->JntToCart(last_q_, FramePos);
 
-        double qx, qy, qz, qw;
+        double r,p,y;
+		FramePos.M.GetRPY(r,p,y);
+		lase_pose_(0) = FramePos.p.x();	lase_pose_(1) = FramePos.p.y();	lase_pose_(2) = FramePos.p.z();	//position
+		lase_pose_(3) = r;	lase_pose_(4) = p;	lase_pose_(5) = y;	// Roll, pitch, yaw
+
+        /*double qx, qy, qz, qw;
         FramePos.M.GetQuaternion(qx, qy, qz, qw);
         lase_pose_(0) = FramePos.p.x();	lase_pose_(1) = FramePos.p.y();	lase_pose_(2) = FramePos.p.z();	//position
         lase_pose_(3) = qx;	lase_pose_(4) = qy;	lase_pose_(5) = qz;	lase_pose_(6) = qw;	// Quaternion
-
+*/
         ///---------------------------------------------------------------------
         /// JAcobian calculation
         jntToJacSolver_.reset(new KDL::ChainJntToJacSolver(chain_));
