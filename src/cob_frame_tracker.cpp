@@ -441,9 +441,9 @@ void CobFrameTracker::solver()
 	c_init = pub_data_joint_vel.data;
 
     OCP ocp_problem(0.0, 1.0, 4);
-    ocp_problem.minimizeMayerTerm( 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
+    ocp_problem.minimizeMayerTerm( (v.transpose()*v) + 10.0*(( (x(0)-target_frame_TO_root_frame.getOrigin().x())  * (x(0)-target_frame_TO_root_frame.getOrigin().x()) ) +
     							   ( (x(1)-target_frame_TO_root_frame.getOrigin().y())  * (x(1)-target_frame_TO_root_frame.getOrigin().y()) ) +
-    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) ) + (v.transpose()*v) //+
+    							   ( (x(2)-target_frame_TO_root_frame.getOrigin().z())  * (x(2)-target_frame_TO_root_frame.getOrigin().z()) )  //+
     							   /*( (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x())  * (x(3)-target_frame_TO_root_frame.getRotation().getAxis().x()) ) +
     							   ( (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y())  * (x(4)-target_frame_TO_root_frame.getRotation().getAxis().y()) ) +
     							   ( (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z())  * (x(5)-target_frame_TO_root_frame.getRotation().getAxis().z()) )*/
@@ -518,18 +518,23 @@ void CobFrameTracker::solver()
 	//ROS_ERROR_STREAM("Size of control vector: "<< c_output.getFirstVector().getDim());
 	//ROS_ERROR_STREAM("Size of last control vector: "<< c_output.getLastVector().getDim());
 
-	double error = transform_tf.getOrigin().x() + transform_tf.getOrigin().y() + transform_tf.getOrigin().z() + transform_tf.getRotation().x() + transform_tf.getRotation().y() + transform_tf.getRotation().z() + transform_tf.getRotation().w();
+	double cart_distance = sqrt(transform_tf.getOrigin().x()*transform_tf.getOrigin().x() +
+								transform_tf.getOrigin().y()*transform_tf.getOrigin().y() +
+								transform_tf.getOrigin().z()*transform_tf.getOrigin().z()
+								);
 
 
   //print data on to console
 	std::cout<<"\033[36;1m" // green console colour
 			<< "***********************"<<std::endl
-			<< "residual error want to minimize: " << error
+			<< "cartesian distance: " << cart_distance
 			<< "***********************"
 			<< "\033[0m\n" << std::endl;
 
-/*
-	if(error < 0.01)
+
+
+
+	if( cart_distance < 0.05)
 	{
 		pub_data_joint_vel.data.resize(7);
 		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
@@ -544,7 +549,7 @@ void CobFrameTracker::solver()
 
 	}
 	else
-	{*/
+	{
 		pub_data_joint_vel.data.resize(7);
 		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
 		pub_data_joint_vel.data[0] = cnt_jnt_vel(0);
@@ -555,7 +560,7 @@ void CobFrameTracker::solver()
 		pub_data_joint_vel.data[5] = cnt_jnt_vel(5);
 		//pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
 		joint_vel_pub_.publish(pub_data_joint_vel);
-	//}
+	}
 }
 void CobFrameTracker::publishHoldJointState(const ros::Duration& period)
 {
