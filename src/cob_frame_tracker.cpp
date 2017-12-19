@@ -403,6 +403,8 @@ void CobFrameTracker::solver()
 
     // get Jacobian matrix
     DMatrix jac_mat = J_Mat;
+    //Manipulability of Robotic Mechanisms by Tsuneo Yoshikawa
+    Eigen::MatrixXd manipuble_matrix =  J_Mat * J_Mat.transpose();
 
     const unsigned int m = 6;  // rows of jacobian matrix, 6 with 3 lin and 3 angular velocity
     const unsigned int n = 7;
@@ -524,17 +526,18 @@ void CobFrameTracker::solver()
 								);
 
 
+	double manipuability = sqrt(manipuble_matrix.determinant());
+
   //print data on to console
 	std::cout<<"\033[36;1m" // green console colour
 			<< "***********************"<<std::endl
 			<< "cartesian distance: " << cart_distance
+			<< "\t manipuabilty: " << manipuability
 			<< "***********************"
 			<< "\033[0m\n" << std::endl;
 
 
-
-
-	if( cart_distance < 0.05)
+	if( cart_distance < 0.05 )
 	{
 		pub_data_joint_vel.data.resize(7);
 		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
@@ -549,17 +552,33 @@ void CobFrameTracker::solver()
 
 	}
 	else
-	{
-		pub_data_joint_vel.data.resize(7);
-		//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
-		pub_data_joint_vel.data[0] = cnt_jnt_vel(0);
-		pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
-		pub_data_joint_vel.data[2] = cnt_jnt_vel(2);
-		pub_data_joint_vel.data[3] = cnt_jnt_vel(3);
-		pub_data_joint_vel.data[4] = cnt_jnt_vel(4);
-		pub_data_joint_vel.data[5] = cnt_jnt_vel(5);
-		//pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
-		joint_vel_pub_.publish(pub_data_joint_vel);
+	{/*
+		if (manipuble_matrix.determinant() <= 0.009)
+		{
+			pub_data_joint_vel.data.resize(7);
+			//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+			pub_data_joint_vel.data[0] = 0;
+			pub_data_joint_vel.data[1] = 0;
+			pub_data_joint_vel.data[2] = 0;
+			pub_data_joint_vel.data[3] = 0;
+			pub_data_joint_vel.data[4] = 0;
+			pub_data_joint_vel.data[5] = 0;
+			pub_data_joint_vel.data[6] = 0;
+			joint_vel_pub_.publish(pub_data_joint_vel);
+		}
+		else
+		{*/
+			pub_data_joint_vel.data.resize(7);
+			//pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+			pub_data_joint_vel.data[0] = cnt_jnt_vel(0);
+			pub_data_joint_vel.data[1] = cnt_jnt_vel(1);
+			pub_data_joint_vel.data[2] = cnt_jnt_vel(2);
+			pub_data_joint_vel.data[3] = cnt_jnt_vel(3);
+			pub_data_joint_vel.data[4] = cnt_jnt_vel(4);
+			pub_data_joint_vel.data[5] = cnt_jnt_vel(5);
+			pub_data_joint_vel.data[6] = cnt_jnt_vel(6);
+			joint_vel_pub_.publish(pub_data_joint_vel);
+		//}
 	}
 }
 void CobFrameTracker::publishHoldJointState(const ros::Duration& period)
