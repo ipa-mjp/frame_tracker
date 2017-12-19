@@ -459,6 +459,8 @@ void CobFrameTracker::solver()
 
     ocp_problem.subjectTo(f);
     ocp_problem.subjectTo(-0.50 <= v <= 0.50);
+    //ocp_problem.subjectTo(AT_START, v == 1.0);
+    ocp_problem.subjectTo(AT_END , v == 0.0);
 
     //OptimizationAlgorithm alg(ocp_problem);
     RealTimeAlgorithm alg(ocp_problem, 0.025);
@@ -479,6 +481,7 @@ void CobFrameTracker::solver()
     //alg.set( DISCRETIZATION_TYPE, COLLOCATION);
     alg.set( DISCRETIZATION_TYPE, COLLOCATION);
     alg.set(KKT_TOLERANCE, 1.000000E-06);
+
 
 /*    alg.set( DISCRETIZATION_TYPE, MULTIPLE_SHOOTING );
     alg.set( 'SPARSE_QP_SOLUTION',          FULL_CONDENSING_N2');
